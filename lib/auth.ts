@@ -7,7 +7,12 @@ export function authConfigured() {
   return Boolean(process.env.APP_PASSWORD);
 }
 
+export function publicAccess() {
+  return !process.env.APP_PASSWORD && process.env.PUBLIC_ACCESS === "true";
+}
+
 export function authRequired() {
+  if (publicAccess()) return false;
   return authConfigured() || process.env.NODE_ENV === "production";
 }
 
@@ -75,7 +80,7 @@ export function requestIsSecure(request: Request) {
 export function guard(request: Request): Response | null {
   const password = process.env.APP_PASSWORD;
   if (!password) {
-    if (process.env.NODE_ENV !== "production") return null;
+    if (process.env.NODE_ENV !== "production" || publicAccess()) return null;
     return Response.json({ error: "未配置 APP_PASSWORD，已拒绝公开访问" }, { status: 503 });
   }
   const token = readCookie(request.headers.get("cookie") || "", SESSION_COOKIE);

@@ -24,7 +24,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   if (pathname && isProtected(pathname)) {
     const password = process.env.APP_PASSWORD;
     if (!password) {
-      if (process.env.NODE_ENV === "production") redirect("/login?unconfigured=1");
+      if (process.env.NODE_ENV === "production" && process.env.PUBLIC_ACCESS !== "true") redirect("/login?unconfigured=1");
     } else {
       const token = (await cookies()).get(SESSION_COOKIE)?.value;
       if (!verifySession(token, password)) redirect(`/login?next=${encodeURIComponent(pathname)}`);
