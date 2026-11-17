@@ -3,7 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { ExternalLink } from "@/components/external-link";
 import { Pagination } from "@/components/pagination";
+import { profileUrl } from "@/lib/source-links";
 import { Shell } from "@/components/shell";
 import { DETAIL_SIZES } from "@/lib/pagination";
 import { Sparkline } from "@/components/sparkline";
@@ -174,7 +176,11 @@ export default function TermPage({ params }: { params: Promise<{ id: string }> }
           <section className="panel p-4 sm:p-5">
             <h2 className="text-sm font-semibold">谁在说</h2>
             <ul className="mt-2 space-y-1 text-sm text-muted">
-              {data.voices?.items.map((item) => <li key={`${item.platform}:${item.name}`}>{item.platform === "x" ? `@${item.name}` : `r/${item.name}`}</li>)}
+              {data.voices?.items.map((item) => (
+                <li key={`${item.platform}:${item.name}`}>
+                  <ExternalLink href={profileUrl(item.platform, item.name)}>{item.platform === "x" ? `@${item.name}` : `r/${item.name}`}</ExternalLink>
+                </li>
+              ))}
               {!data.voices?.items.length && <li>还没有跟踪账号或板块提到。</li>}
             </ul>
             <Pagination page={data.voices?.page || 1} size={data.voices?.size || 10} total={data.voices?.total || 0} pageParam="mentionPage" sizeParam="mentionSize" sizes={DETAIL_SIZES} />
@@ -217,7 +223,7 @@ export default function TermPage({ params }: { params: Promise<{ id: string }> }
                   {!data.evidence.filter((item) => item.source === "sitemap").length && <li className="text-muted">还没有竞品新页面。</li>}
                   {data.evidence.filter((item) => item.source === "sitemap").map((page) => (
                     <li key={page.url || page.title}>
-                      <a className="break-all font-medium text-primary hover:underline" href={page.url} target="_blank" rel="noreferrer">{page.title || page.url}</a>
+                      <ExternalLink href={page.url} className="font-medium">{page.title || page.url}</ExternalLink>
                       <div className="text-xs text-faint">{page.author}</div>
                     </li>
                   ))}
@@ -237,7 +243,7 @@ export default function TermPage({ params }: { params: Promise<{ id: string }> }
                     {!data.analysis?.serp?.length && <li className="text-muted">{data.analysis?.competitionNote || "还没有搜索结果。"}</li>}
                     {data.analysis?.serp?.map((row) => (
                       <li key={row.url} className="flex items-start justify-between gap-3">
-                        <a className="break-all text-primary hover:underline" href={row.url} target="_blank" rel="noreferrer">{row.domain || row.url}</a>
+                        <ExternalLink href={row.url}>{row.domain || row.url}</ExternalLink>
                         <span className="shrink-0 text-xs text-faint">{PAGE_KIND[row.pageKind || ""] || row.kind} · {row.homepage ? "首页" : "内页"}</span>
                       </li>
                   ))}
@@ -303,11 +309,7 @@ function QuoteList({ items, empty, total = 0, page = 1, size = 10 }: { items: Ev
       {items.map((item, index) => (
         <li key={`${item.url}-${index}`} className="text-sm">
           <div className="text-xs text-faint">{item.sourceLabel} · {item.intent} {item.author && `· ${item.author}`}</div>
-          {item.url ? (
-            <a className="mt-0.5 block break-all font-medium text-primary hover:underline" href={item.url} target="_blank" rel="noreferrer">{item.title || item.quote}</a>
-          ) : (
-            <div className="mt-0.5 break-words font-medium">{item.title}</div>
-          )}
+          <ExternalLink href={item.url} className="mt-0.5 font-medium">{item.title || item.quote || item.url}</ExternalLink>
           {item.quote && <p className="mt-1 break-words leading-6 text-muted">{item.quote}</p>}
         </li>
       ))}

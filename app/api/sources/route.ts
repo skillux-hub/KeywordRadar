@@ -1,5 +1,6 @@
 import { guard } from "@/lib/auth";
 import { all } from "@/lib/db";
+import { sourceHome } from "@/lib/source-links";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,7 @@ export function GET(request: Request) {
       lastRunAt: row.last_run_at,
       count: row.item_count,
       keys: row.keys_hint,
+      url: sourceHome(row.source),
     })),
   });
 }

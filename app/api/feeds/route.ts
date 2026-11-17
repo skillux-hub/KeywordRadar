@@ -11,15 +11,19 @@ export function GET(request: Request) {
   const industry = url.searchParams.get("industry") || "";
   const size = parseSize(url.searchParams.get("size"));
   return Response.json({
-    reddit: feedPage("reddit", industry, parsePage(url.searchParams.get("redditPage")), size),
-    x: feedPage("x", industry, parsePage(url.searchParams.get("xPage")), size),
-    pages: feedPage("sitemap", industry, parsePage(url.searchParams.get("sitePage")), size),
+    reddit: feedPage(["reddit"], industry, parsePage(url.searchParams.get("redditPage")), size),
+    x: feedPage(["x"], industry, parsePage(url.searchParams.get("xPage")), size),
+    pages: feedPage(["sitemap"], industry, parsePage(url.searchParams.get("sitePage")), size),
+    hn: feedPage(["hn"], industry, parsePage(url.searchParams.get("hnPage")), size),
+    producthunt: feedPage(["producthunt"], industry, parsePage(url.searchParams.get("phPage")), size),
+    github: feedPage(["github"], industry, parsePage(url.searchParams.get("ghPage")), size),
+    news: feedPage(["googlenews", "substack", "medium"], industry, parsePage(url.searchParams.get("newsPage")), size),
   });
 }
 
-function feedPage(source: string, industry: string, page: number, size: number) {
-  const params: unknown[] = [source];
-  let where = "source = ?";
+function feedPage(sources: string[], industry: string, page: number, size: number) {
+  const params: unknown[] = [...sources];
+  let where = `source in (${sources.map(() => "?").join(",")})`;
   if (industry) {
     where += " and industry = ?";
     params.push(industry);

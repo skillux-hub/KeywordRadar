@@ -188,7 +188,7 @@ export function listEvents(action: "candidate" | "history", platform: "x" | "red
   const pages = Math.max(1, Math.ceil(total / size) || 1);
   const current = Math.min(page, pages);
   const items = all(
-    `select id, platform, industry, account_key, action, reason, score, created_at from discovery_events where ${where} order by id desc limit ? offset ?`,
+    `select id, platform, industry, account_key, action, reason, score, evidence_url, created_at from discovery_events where ${where} order by id desc limit ? offset ?`,
     ...params,
     size,
     (current - 1) * size,

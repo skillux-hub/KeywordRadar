@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { ExternalLink } from "@/components/external-link";
 import { Pagination } from "@/components/pagination";
+import { redditUserUrl, subredditUrl, xProfile } from "@/lib/source-links";
 import { Shell } from "@/components/shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -70,6 +72,14 @@ export default function WatchlistsPage() {
   );
 }
 
+function rowHref(kind: string, row: Row) {
+  if (kind === "x") return xProfile(row.handle || "");
+  if (kind === "subreddit") return subredditUrl(row.name || "");
+  if (kind === "reddit_user") return redditUserUrl(row.username || "");
+  if (kind === "site") return row.domain ? `https://${row.domain}` : "";
+  return "";
+}
+
 function List({
   title, page, suggested, pageParam, suggestParam, label, kind, industry, act, placeholder,
 }: {
@@ -97,8 +107,8 @@ function List({
       <ul className="mt-3 space-y-2 text-sm">
         {active.map((row) => (
           <li key={row.id} className="flex items-center justify-between gap-2">
-            <span>{label(row)}</span>
-            <button className="text-xs text-muted" onClick={() => void act({ op: "remove", kind, id: row.id })}>移除</button>
+            <ExternalLink href={rowHref(kind, row)}>{label(row)}</ExternalLink>
+            <button className="shrink-0 text-xs text-muted" onClick={() => void act({ op: "remove", kind, id: row.id })}>移除</button>
           </li>
         ))}
       </ul>
@@ -108,7 +118,7 @@ function List({
         {ideas.map((row) => (
           <li key={row.id}>
             <div className="flex items-center justify-between gap-2">
-              <span>{label(row)}</span>
+              <ExternalLink href={rowHref(kind, row)}>{label(row)}</ExternalLink>
               <span className="flex gap-2">
                 <button className="text-xs text-primary" onClick={() => void act({ op: "approve", kind, id: row.id })}>采用</button>
                 <button className="text-xs text-muted" onClick={() => void act({ op: "reject", kind, id: row.id })}>忽略</button>

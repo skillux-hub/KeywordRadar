@@ -334,6 +334,7 @@ function migrate(db: DatabaseSync) {
   ensureColumn(db, "term_analysis", "ads_present", "INTEGER");
   ensureColumn(db, "term_analysis", "page_mix_json", "TEXT");
   ensureColumn(db, "term_evidence", "channel", "TEXT");
+  ensureColumn(db, "discovery_events", "evidence_url", "TEXT");
   for (const column of [
     ["x_accounts", "followers", "INTEGER"],
     ["x_accounts", "bio", "TEXT"],

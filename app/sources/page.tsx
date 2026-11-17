@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ExternalLink } from "@/components/external-link";
 import { Shell } from "@/components/shell";
 import { ago } from "@/lib/utils";
 
@@ -13,6 +14,7 @@ type Source = {
   lastRunAt: string | null;
   count: number;
   keys: string;
+  url?: string;
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -38,7 +40,7 @@ export default function SourcesPage() {
         {sources.map((source) => (
           <article key={source.id} className="panel p-4">
             <div className="flex items-center justify-between gap-3">
-              <h2 className="font-medium">{source.name}</h2>
+              <h2 className="font-medium">{source.url ? <ExternalLink href={source.url}>{source.name}</ExternalLink> : source.name}</h2>
               <span className="rounded-full bg-accent px-2 py-1 text-xs">{STATUS_LABEL[source.status] || source.status} · {source.roleLabel}</span>
             </div>
             <p className="mt-2 text-sm leading-6 text-muted">{source.message}</p>

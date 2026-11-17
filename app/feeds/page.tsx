@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { ExternalLink } from "@/components/external-link";
 import { Pagination } from "@/components/pagination";
 import { Shell } from "@/components/shell";
+import { redditUserUrl, safeExternalUrl, xProfile } from "@/lib/source-links";
 import { ago } from "@/lib/utils";
 
-type Item = { industry: string | null; author: string | null; title: string | null; text: string | null; url: string | null; published_at: string | null; velocity: number | null };
+type Item = { source?: string; industry: string | null; author: string | null; title: string | null; text: string | null; url: string | null; published_at: string | null; velocity: number | null };
 type FeedPage = { items: Item[]; total: number; page: number; size: number };
 type Meta = { industries: { slug: string; nameZh: string }[] };
 
@@ -17,10 +19,9 @@ export default function FeedsPage() {
   const industry = search.get("industry") || "";
   const [meta, setMeta] = useState<Meta | null>(null);
   const [xDisabled, setXDisabled] = useState(false);
-  const [data, setData] = useState<{ reddit: FeedPage; x: FeedPage; pages: FeedPage }>({
-    reddit: { items: [], total: 0, page: 1, size: 20 },
-    x: { items: [], total: 0, page: 1, size: 20 },
-    pages: { items: [], total: 0, page: 1, size: 20 },
+  const emptyPage = { items: [], total: 0, page: 1, size: 20 };
+  const [data, setData] = useState<{ reddit: FeedPage; x: FeedPage; pages: FeedPage; hn: FeedPage; producthunt: FeedPage; github: FeedPage; news: FeedPage }>({
+    reddit: emptyPage, x: emptyPage, pages: emptyPage, hn: emptyPage, producthunt: emptyPage, github: emptyPage, news: emptyPage,
   });
 
   useEffect(() => {
@@ -46,7 +47,7 @@ export default function FeedsPage() {
           const params = new URLSearchParams(search.toString());
           const value = event.target.value;
           if (value) params.set("industry", value); else params.delete("industry");
-          for (const key of ["redditPage", "xPage", "sitePage"]) params.delete(key);
+          for (const key of ["redditPage", "xPage", "sitePage", "hnPage", "phPage", "ghPage", "newsPage"]) params.delete(key);
           const next = params.toString();
           router.replace(next ? `${pathname}?${next}` : pathname, { scroll: false });
         }}>
@@ -58,6 +59,10 @@ export default function FeedsPage() {
         <Column title="Reddit 讨论" page={data.reddit} pageParam="redditPage" empty="这一轮还没有社区帖。公开 JSON 被拦时会改用 RSS。" />
         <Column title="X 大V" page={data.x} pageParam="xPage" empty={xDisabled ? "未配置 X 数据接口，时间线暂停。不会去关注任何账号。" : "这轮还没有拉到帖子。"} />
         <Column title="竞品新页面" page={data.pages} pageParam="sitePage" empty="还没有 72 小时内新增、且带 lastmod 的 URL。第一次跑会先建立基线。" />
+        <Column title="Hacker News" page={data.hn} pageParam="hnPage" empty="还没有 HN 帖子。" />
+        <Column title="Product Hunt" page={data.producthunt} pageParam="phPage" empty="还没有 Product Hunt 条目。" />
+        <Column title="GitHub" page={data.github} pageParam="ghPage" empty="还没有仓库动态。" />
+        <Column title="新闻与通讯" page={data.news} pageParam="newsPage" empty="还没有新闻或通讯。" />
       </div>
     </Shell>
   );
@@ -72,8 +77,13 @@ function Column({ title, page, pageParam, empty }: { title: string; page: FeedPa
       <ul className="mt-3 space-y-3">
         {items.map((item, index) => (
           <li key={`${item.url}-${index}`} className="text-sm">
-            <div className="text-xs text-muted">{item.author} · {ago(item.published_at)}{item.velocity ? ` · 热度 ${item.velocity.toFixed(1)}/时` : ""}</div>
-            {item.url ? <a className="break-words text-primary" href={item.url} target="_blank" rel="noreferrer">{item.title || item.text}</a> : <span className="break-words">{item.title}</span>}
+            <div className="break-words text-xs text-muted">
+              {item.author && item.source === "x" ? <ExternalLink href={xProfile(item.author)}>@{item.author}</ExternalLink> : null}
+              {item.author && item.source === "reddit" ? <ExternalLink href={redditUserUrl(item.author)}>u/{item.author}</ExternalLink> : null}
+              {item.author && item.source !== "x" && item.source !== "reddit" ? <span>{item.author}</span> : null}
+              <span> · {ago(item.published_at)}{item.velocity ? ` · 热度 ${item.velocity.toFixed(1)}/时` : ""}</span>
+            </div>
+            <ExternalLink href={safeExternalUrl(item.url)}>{item.title || item.text || item.url || "无标题"}</ExternalLink>
           </li>
         ))}
       </ul>

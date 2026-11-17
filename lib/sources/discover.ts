@@ -27,7 +27,7 @@ const INDUSTRY_QUERY: Record<string, string> = {
   finance: "personal finance",
 };
 
-type Candidate = { key: string; score: number; reason: string; relevance: number };
+type Candidate = { key: string; score: number; reason: string; relevance: number; evidenceUrl?: string };
 
 function seedsFor(industry: string) {
   const rows = all<{ topic: string }>("select topic from seeds where active = 1 and industry = ?", industry).map((row) => row.topic);
@@ -138,6 +138,7 @@ async function discoverSubreddits(bypass: boolean, runId: number) {
         relevance: relevanceScore(text, seedsFor(industry.slug)),
         subscribers: typeof row.subscribers === "number" ? row.subscribers : null,
         text,
+        evidenceUrl: `https://www.reddit.com/subreddits/search?q=${encodeURIComponent(query)}`,
       });
     }
     if (calls >= 20) break;
@@ -155,6 +156,7 @@ async function discoverSubreddits(bypass: boolean, runId: number) {
       const text = `${row.title || ""} ${row.selftext || ""}`;
       const key = `${industry.slug}:${name.toLowerCase()}`;
       const previous = found.get(key);
+      const permalink = redditPermalink(row);
       found.set(key, {
         key: name,
         score: 0,
@@ -162,6 +164,7 @@ async function discoverSubreddits(bypass: boolean, runId: number) {
         relevance: Math.max(previous?.relevance ?? 0, relevanceScore(text, seedsFor(industry.slug))),
         subscribers: previous?.subscribers ?? (typeof row.subreddit_subscribers === "number" ? row.subreddit_subscribers : null),
         text: `${previous?.text || ""} ${text}`,
+        evidenceUrl: previous?.evidenceUrl || permalink,
       });
     }
   }
@@ -191,6 +194,7 @@ async function discoverSubreddits(bypass: boolean, runId: number) {
         relevance: relevanceScore(`${row.title || ""} ${row.selftext || ""}`, seedsFor(term.industry)),
         subscribers: typeof row.subreddit_subscribers === "number" ? row.subreddit_subscribers : null,
         text: String(row.title || ""),
+        evidenceUrl: redditPermalink(row),
       });
     }
   }
@@ -218,6 +222,7 @@ async function discoverSubreddits(bypass: boolean, runId: number) {
         relevance: relevanceScore(blob, seedsFor(sub.industry)),
         subscribers: null,
         text: blob,
+        evidenceUrl: `https://www.reddit.com/r/${encodeURIComponent(sub.name)}/`,
       });
     }
   }
@@ -233,8 +238,8 @@ async function discoverSubreddits(bypass: boolean, runId: number) {
     const ranked = await refineScores(industry.slug, scored, seedsFor(industry.slug));
     recordEvents(runId, "reddit", industry.slug, "candidate", ranked);
     const outcome = applyPool("reddit", industry.slug, ranked, limit);
-    recordEvents(runId, "reddit", industry.slug, "added", outcome.add);
-    recordEvents(runId, "reddit", industry.slug, "retired", outcome.retire);
+    recordEvents(runId, "reddit", industry.slug, "added", stampEvidence(outcome.add, ranked));
+    recordEvents(runId, "reddit", industry.slug, "retired", stampEvidence(outcome.retire, ranked));
     added += outcome.added;
     retired += outcome.retired;
   }
@@ -246,7 +251,7 @@ async function discoverAccounts(bypass: boolean, runId: number) {
   let candidates = 0;
   let added = 0;
   let retired = 0;
-  const mentions = new Map<string, { count: number; recent: number; text: string }>();
+  const mentions = new Map<string, { count: number; recent: number; text: string; evidenceUrl: string }>();
   const since = new Date(Date.now() - 30 * 86400000).toISOString();
   const feeds = all<{ industry: string | null; title: string | null; text: string | null; url: string | null; fetched_at: string }>(
     `select industry, title, text, url, fetched_at from feed_items
@@ -259,9 +264,10 @@ async function discoverAccounts(bypass: boolean, runId: number) {
     const recent = Date.now() - Date.parse(item.fetched_at) <= 7 * 86400000;
     for (const handle of handles) {
       const key = `${item.industry || "ai"}:${handle}`;
-      const row = mentions.get(key) ?? { count: 0, recent: 0, text: "" };
+      const row = mentions.get(key) ?? { count: 0, recent: 0, text: "", evidenceUrl: "" };
       row.count += 1;
       if (recent) row.recent += 1;
+      if (!row.evidenceUrl && item.url) row.evidenceUrl = item.url;
       row.text = `${row.text} ${item.title || ""}`.slice(0, 400);
       mentions.set(key, row);
     }
@@ -277,13 +283,15 @@ async function discoverAccounts(bypass: boolean, runId: number) {
       400,
       bypass,
     );
-    const hits = (hn as { hits?: { title?: string; story_text?: string; url?: string }[] } | null)?.hits ?? [];
+    const hits = (hn as { hits?: { objectID?: string; title?: string; story_text?: string; url?: string }[] } | null)?.hits ?? [];
     for (const hit of hits) {
+      const evidence = hit.url || (hit.objectID ? `https://news.ycombinator.com/item?id=${hit.objectID}` : "");
       for (const handle of extractXHandles(`${hit.title || ""} ${hit.story_text || ""} ${hit.url || ""}`)) {
         const key = `${industry.slug}:${handle}`;
-        const row = mentions.get(key) ?? { count: 0, recent: 0, text: "" };
+        const row = mentions.get(key) ?? { count: 0, recent: 0, text: "", evidenceUrl: "" };
         row.count += 1;
         row.recent += 1;
+        if (!row.evidenceUrl) row.evidenceUrl = evidence;
         row.text = `${row.text} ${hit.title || ""}`.slice(0, 400);
         mentions.set(key, row);
       }
@@ -310,14 +318,15 @@ async function discoverAccounts(bypass: boolean, runId: number) {
     if (twitter) {
       const handle = twitter.replace(/^@/, "").toLowerCase();
       const key = `${industry.slug}:${handle}`;
-      const row = mentions.get(key) ?? { count: 0, recent: 0, text: "" };
+      const row = mentions.get(key) ?? { count: 0, recent: 0, text: "", evidenceUrl: "" };
       row.count += 2;
       row.recent += 1;
+      if (!row.evidenceUrl) row.evidenceUrl = `https://github.com/${login}`;
       row.text = `${row.text} github ${login}`;
       mentions.set(key, row);
     }
   }
-  const apiAuthors = new Map<string, { followers: number; engagement: number; text: string; mentions: string[]; reposts: string[] }>();
+  const apiAuthors = new Map<string, { followers: number; engagement: number; text: string; mentions: string[]; reposts: string[]; evidenceUrl: string }>();
   let notice = "";
   for (const industry of INDUSTRIES) {
     const query = queriesFor(industry.slug)[0];
@@ -326,7 +335,7 @@ async function discoverAccounts(bypass: boolean, runId: number) {
     for (const post of posts) {
       if (!post.author) continue;
       const key = `${industry.slug}:${post.author.toLowerCase()}`;
-      const row = apiAuthors.get(key) ?? { followers: post.followers ?? 0, engagement: 0, text: "", mentions: [], reposts: [] };
+      const row = apiAuthors.get(key) ?? { followers: post.followers ?? 0, engagement: 0, text: "", mentions: [], reposts: [], evidenceUrl: post.id ? `https://x.com/${post.author}/status/${post.id}` : "" };
       row.engagement += post.likes + post.reposts + post.replies;
       row.followers = Math.max(row.followers, post.followers ?? 0);
       row.text = `${row.text} ${post.text}`.slice(0, 500);
@@ -345,6 +354,7 @@ async function discoverAccounts(bypass: boolean, runId: number) {
         key: handle,
         relevance,
         reason: `近 30 天在社区或新闻里被提到 ${info.count} 次`,
+        evidenceUrl: info.evidenceUrl,
         score: accountScore({ followers: null, postsPerDay: null, engagementRate: null, relevance: Math.max(relevance, info.count ? 0.35 : 0), mentions: info.recent || info.count }),
       });
     }
@@ -357,6 +367,7 @@ async function discoverAccounts(bypass: boolean, runId: number) {
       scored.set(handle, {
         key: handle,
         relevance,
+        evidenceUrl: previous?.evidenceUrl || info.evidenceUrl,
         reason: `行业搜索里的高互动作者`,
         score: Math.max(
           previous?.score ?? 0,
@@ -369,6 +380,7 @@ async function discoverAccounts(bypass: boolean, runId: number) {
         scored.set(related, {
           key: related,
           relevance: relevance * 0.6,
+          evidenceUrl: info.evidenceUrl,
           reason: `被 @${handle} 提及或转发`,
           score: accountScore({ followers: null, postsPerDay: null, engagementRate: null, relevance: relevance * 0.6, mentions: 2 }),
         });
@@ -378,8 +390,8 @@ async function discoverAccounts(bypass: boolean, runId: number) {
     const ranked = await refineScores(industry.slug, [...scored.values()], seedsFor(industry.slug));
     recordEvents(runId, "x", industry.slug, "candidate", ranked);
     const outcome = applyPool("x", industry.slug, ranked, limit);
-    recordEvents(runId, "x", industry.slug, "added", outcome.add);
-    recordEvents(runId, "x", industry.slug, "retired", outcome.retire);
+    recordEvents(runId, "x", industry.slug, "added", stampEvidence(outcome.add, ranked));
+    recordEvents(runId, "x", industry.slug, "retired", stampEvidence(outcome.retire, ranked));
     added += outcome.added;
     retired += outcome.retired;
   }
@@ -510,12 +522,19 @@ function applyPool(platform: "x" | "reddit", industry: string, candidates: Candi
   return { add: result.add, retire, added: result.add.length, retired: retire.length };
 }
 
-function recordEvents(runId: number, platform: string, industry: string, action: string, items: { key: string; reason: string; score?: number }[]) {
+function stampEvidence(items: { key: string; reason: string; score?: number }[], ranked: Candidate[]) {
+  return items.map((item) => ({
+    ...item,
+    evidenceUrl: ranked.find((row) => row.key.toLowerCase() === item.key.toLowerCase())?.evidenceUrl,
+  }));
+}
+
+function recordEvents(runId: number, platform: string, industry: string, action: string, items: { key: string; reason: string; score?: number; evidenceUrl?: string }[]) {
   if (!runId || !items.length) return;
   const now = new Date().toISOString();
   for (const item of items) {
     run(
-      "insert into discovery_events (run_id, platform, industry, account_key, action, reason, score, created_at) values (?, ?, ?, ?, ?, ?, ?, ?)",
+      "insert into discovery_events (run_id, platform, industry, account_key, action, reason, score, evidence_url, created_at) values (?, ?, ?, ?, ?, ?, ?, ?, ?)",
       runId,
       platform,
       industry,
@@ -523,7 +542,15 @@ function recordEvents(runId: number, platform: string, industry: string, action:
       action,
       item.reason,
       item.score ?? null,
+      item.evidenceUrl || null,
       now,
     );
   }
+}
+
+function redditPermalink(row: Record<string, unknown>) {
+  const path = String(row.permalink || "");
+  if (path.startsWith("http")) return path;
+  if (path.startsWith("/")) return `https://www.reddit.com${path}`;
+  return "";
 }

@@ -3,13 +3,15 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { ExternalLink } from "@/components/external-link";
 import { Pagination } from "@/components/pagination";
+import { profileUrl, safeExternalUrl } from "@/lib/source-links";
 import { Shell } from "@/components/shell";
 import { Button } from "@/components/ui/button";
 import { DETAIL_SIZES, parsePage, parseSize } from "@/lib/pagination";
 
 type Industry = { slug: string; nameZh: string };
-type EventRow = { id: number; platform: string; industry: string | null; account_key: string; action: string; reason: string | null; created_at: string };
+type EventRow = { id: number; platform: string; industry: string | null; account_key: string; action: string; reason: string | null; evidence_url?: string | null; created_at: string };
 type EventPage = { items: EventRow[]; total: number; page: number; size: number };
 
 type Card = {
@@ -50,7 +52,11 @@ function EventList({ title, rows, pageParam, sizeParam, empty }: { title: string
       {!rows.items.length && <p className="mt-2 text-sm text-muted">{empty}</p>}
       <ul className="mt-2 space-y-1 text-sm">
         {rows.items.map((row) => (
-          <li key={row.id} className="text-muted">{row.platform === "x" ? "@" : "r/"}{row.account_key} · {row.action === "added" ? "加入" : row.action === "retired" ? "退出" : "候选"}{row.reason ? ` · ${row.reason}` : ""}</li>
+          <li key={row.id} className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-muted">
+            <ExternalLink href={profileUrl(row.platform, row.account_key)}>{row.platform === "x" ? "@" : "r/"}{row.account_key}</ExternalLink>
+            <span>{row.action === "added" ? "加入" : row.action === "retired" ? "退出" : "候选"}{row.reason ? ` · ${row.reason}` : ""}</span>
+            {safeExternalUrl(row.evidence_url) && <ExternalLink href={safeExternalUrl(row.evidence_url)} className="text-xs">来源</ExternalLink>}
+          </li>
         ))}
       </ul>
       <Pagination page={rows.page} size={rows.size} total={rows.total} pageParam={pageParam} sizeParam={sizeParam} sizes={DETAIL_SIZES} />
@@ -181,7 +187,7 @@ export function SourceBoard({ platform }: { platform: "x" | "reddit" | "all" }) 
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="text-base font-semibold">{item.label}</h2>
+                  <h2 className="text-base font-semibold"><ExternalLink href={profileUrl(item.platform, item.key)}>{item.label}</ExternalLink></h2>
                   <span className="text-xs text-faint">{item.origin} · {item.status === "paused" ? "已暂停" : "跟踪中"}</span>
                 </div>
                 <p className="mt-1 text-xs text-muted">{item.industryLabels.join("、") || "行业还没定"}{item.reason ? ` · ${item.reason}` : ""}</p>
@@ -205,7 +211,7 @@ export function SourceBoard({ platform }: { platform: "x" | "reddit" | "all" }) 
                 <ul className="mt-2 space-y-1 text-sm">
                   {thread.items.map((post) => (
                     <li key={post.url || post.title}>
-                      {post.url ? <a className="text-primary hover:underline" href={post.url} target="_blank" rel="noreferrer">{post.title}</a> : post.title}
+                      <ExternalLink href={safeExternalUrl(post.url)}>{post.title}</ExternalLink>
                       <span className="ml-2 text-xs text-faint">{TALK[post.discussion] || ""} · {post.engagement}</span>
                     </li>
                   ))}
@@ -238,7 +244,7 @@ export function SourceBoard({ platform }: { platform: "x" | "reddit" | "all" }) 
         <h2 className="text-sm font-medium">已退出的来源</h2>
         <ul className="mt-2 space-y-1 text-sm text-muted">
           {retired.items.map((item) => (
-            <li key={`${item.platform}:${item.key}`}>{item.label} · {item.retiredReason || item.reason || "已退出"}</li>
+            <li key={`${item.platform}:${item.key}`} className="break-words"><ExternalLink href={profileUrl(item.platform, item.key)}>{item.label}</ExternalLink> · {item.retiredReason || item.reason || "已退出"}</li>
           ))}
           {!retired.items.length && <li>这一页没有退出记录。</li>}
         </ul>

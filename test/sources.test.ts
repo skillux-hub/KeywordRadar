@@ -13,6 +13,7 @@ import {
   relevanceScore,
   shouldRetire,
 } from "../lib/sources/metrics.ts";
+import { profileUrl, safeExternalUrl, xStatus } from "../lib/source-links.ts";
 import { parseXSearch, parseXTweets, parseXUser } from "../lib/sources/x-parse.ts";
 
 test("relevance uses seed overlap and ignores unrelated text", () => {
@@ -80,6 +81,13 @@ test("cross-subreddit spread boosts a term that is still spreading", () => {
     now,
   );
   assert.ok(boost >= 10);
+});
+
+test("profile links point at the public page", () => {
+  assert.equal(profileUrl("x", "@sama"), "https://x.com/sama");
+  assert.equal(profileUrl("reddit", "SEO"), "https://www.reddit.com/r/SEO/");
+  assert.equal(xStatus("sama", "99"), "https://x.com/sama/status/99");
+  assert.equal(safeExternalUrl("javascript:alert(1)"), "");
 });
 
 test("official and third-party x payloads both parse", () => {
