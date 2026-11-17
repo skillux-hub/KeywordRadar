@@ -1,6 +1,6 @@
 import { INDUSTRIES } from "../catalog";
 import { all, get, run } from "../db";
-import { fetchJson } from "../http";
+import { fetchJson, fetchText } from "../http";
 import { readCache, writeCache } from "./cache";
 import {
   accountScore,
@@ -230,7 +230,7 @@ async function discoverSubreddits(bypass: boolean) {
       reason: row.reason,
       score: communityScore({ subscribers: row.subscribers, postsPerDay: null, relevance: row.relevance, growth: null }),
     }));
-    const outcome = applyPool("reddit", industry.slug, scored, limit);
+    const outcome = applyPool("reddit", industry.slug, await refineScores(industry.slug, scored, seedsFor(industry.slug)), limit);
     added += outcome.added;
     retired += outcome.retired;
   }
@@ -371,11 +371,49 @@ async function discoverAccounts(bypass: boolean) {
       }
     }
     candidates += scored.size;
-    const outcome = applyPool("x", industry.slug, [...scored.values()], limit);
+    const outcome = applyPool("x", industry.slug, await refineScores(industry.slug, [...scored.values()], seedsFor(industry.slug)), limit);
     added += outcome.added;
     retired += outcome.retired;
   }
   return { candidates, added, retired, notice };
+}
+
+async function refineScores(industry: string, items: Candidate[], seeds: string[]) {
+  const key = process.env.OPENAI_API_KEY;
+  if (!key || !items.length) return items;
+  const batch = [...items].sort((a, b) => b.score - a.score).slice(0, 12);
+  const base = (process.env.OPENAI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
+  try {
+    const res = await fetchText(`${base}/chat/completions`, {
+      method: "POST",
+      timeoutMs: 20000,
+      headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+        temperature: 0,
+        messages: [
+          {
+            role: "system",
+            content: "判断账号或板块和给定行业种子有多相关。只返回 JSON：{\"scores\":[{\"name\":string,\"score\":number}]}。score 从 0 到 1。",
+          },
+          { role: "user", content: JSON.stringify({ industry, seeds, items: batch.map((item) => ({ name: item.key, reason: item.reason })) }) },
+        ],
+      }),
+    });
+    if (!res.ok) return items;
+    const content = JSON.parse(res.text).choices?.[0]?.message?.content ?? "";
+    const match = content.match(/\{[\s\S]*\}/);
+    if (!match) return items;
+    const parsed = JSON.parse(match[0]) as { scores?: { name?: string; score?: number }[] };
+    const scores = new Map((parsed.scores ?? []).filter((row) => row.name && typeof row.score === "number").map((row) => [String(row.name).toLowerCase(), Math.max(0, Math.min(1, row.score as number))]));
+    return items.map((item) => {
+      const extra = scores.get(item.key.toLowerCase());
+      if (extra == null) return item;
+      return { ...item, relevance: Math.max(item.relevance, extra), score: Math.round(item.score * 0.55 + extra * 100 * 0.45) };
+    });
+  } catch {
+    return items;
+  }
 }
 
 function applyPool(platform: "x" | "reddit", industry: string, candidates: Candidate[], limit: number) {

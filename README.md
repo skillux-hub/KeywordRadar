@@ -73,7 +73,7 @@ Google 不是发现源。每轮结束时，对分数最高的一批词做两件�
 
 ## 信息源
 
-X 账号和 Reddit 板块以自动发现为主。每个行业只留一小撮起步种子，方便第一次有地方出发；之后每周按热度、更新频率和跟行业种子的重合度重排。
+X 账号和 Reddit 板块以自动发现为主。每个行业只留一小撮起步种子，方便第一次有地方出发；之后每周按热度、更新频率和跟行业种子的重合度重排。配了 `OPENAI_API_KEY` 时，会再用模型看一眼相关度；没有密钥就只用关键词重合。
 
 - Reddit：用公开的板块搜索、帖子搜索、已跟踪板块侧栏里的 `r/`，以及雷达词出现过的板块。每个行业默认留下 15 个（`SUBREDDIT_DISCOVERY_LIMIT`）。
 - X：配了 `X_BEARER_TOKEN` 或 `X_PROVIDER_BASE_URL` + `X_PROVIDER_API_KEY` 时，会搜行业种子的高互动帖，记下作者、被提及和被转发的账号。没有接口时，从 Reddit、Hacker News、Product Hunt、GitHub 主页的 `twitter_username` 和新闻正文里抽账号。每个行业默认留下 30 个（`X_DISCOVERY_LIMIT`）。
