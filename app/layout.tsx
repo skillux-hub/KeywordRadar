@@ -11,7 +11,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  title: "SEO 新词雷达",
+  title: "KeywordRadar",
   description: "在 Google 收录之前，从英语市场的早期讨论里找出值得抢的搜索词。",
 };
 
