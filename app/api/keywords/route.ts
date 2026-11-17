@@ -1,0 +1,16 @@
+import { listKeywords } from "@/lib/read";
+
+export const dynamic = "force-dynamic";
+
+export function GET(request: Request) {
+  const url = new URL(request.url);
+  const data = listKeywords({
+    industry: url.searchParams.get("industry") || undefined,
+    source: url.searchParams.get("source") || undefined,
+    stage: url.searchParams.get("stage") || undefined,
+    window: url.searchParams.get("window") || "7d",
+    seed: url.searchParams.get("seed") || undefined,
+    q: url.searchParams.get("q") || undefined,
+  });
+  return Response.json(data);
+}
