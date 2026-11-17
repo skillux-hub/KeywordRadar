@@ -35,16 +35,16 @@ export default function WatchlistsPage() {
 
   return (
     <Shell>
-      <h1 className="display text-3xl sm:text-4xl">监控名单</h1>
+      <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">监控名单</h1>
       <p className="mt-2 max-w-2xl text-sm text-muted">X 账号、Reddit 社区和竞品站按行业维护。系统只能建议新增，点「采用」才会进下一轮采集。不会关注任何 X 账号。</p>
       <div className="mt-4 flex gap-2 overflow-x-auto">
         {industries.map((item) => (
-          <button key={item.slug} className={`rounded-full px-3 py-1 text-sm ${industry === item.slug ? "bg-primary text-primary-foreground" : "bg-card border border-border"}`} onClick={() => setIndustry(item.slug)}>
+          <button key={item.slug} className={`shrink-0 rounded-lg px-3 py-1.5 text-sm ${industry === item.slug ? "bg-primary text-primary-foreground" : "border border-border bg-card"}`} onClick={() => setIndustry(item.slug)}>
             {item.nameZh}
           </button>
         ))}
       </div>
-      {message && <p className="mt-3 text-sm text-[#8d3d4e]">{message}</p>}
+      {message && <p className="mt-3 text-sm text-rose-600 dark:text-rose-300">{message}</p>}
       <div className="mt-4 grid gap-3 lg:grid-cols-2">
         <List title="X 大V" rows={current("x")} label={(row) => `@${row.handle} ${row.display_name || ""}`} kind="x" industry={industry} act={act} placeholder="@handle" />
         <List title="Reddit 社区" rows={current("subreddits")} label={(row) => `r/${row.name}`} kind="subreddit" industry={industry} act={act} placeholder="subreddit" />

@@ -38,7 +38,7 @@ export default function DigestPage() {
     <Shell>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="display text-3xl sm:text-4xl">日报与回测</h1>
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">日报与回测</h1>
           <p className="mt-2 max-w-2xl text-sm text-muted">
             每天 {schedule.hour}:00（{schedule.timeZone}）生成前 10 个还没被 Google 接住的机会。配了 SMTP、Telegram 或 webhook 就会外发，页面上始终能看。
           </p>
@@ -61,7 +61,7 @@ export default function DigestPage() {
           <article key={item.id} className="panel p-4">
             <div className="flex items-baseline justify-between gap-3">
               <Link href={`/terms/${item.id}`} className="font-medium">{index + 1}. {item.term}</Link>
-              <span className="display text-2xl">{item.opportunity}</span>
+              <span className="text-2xl font-semibold tabular-nums">{item.opportunity}</span>
             </div>
             <div className="mt-1 text-xs text-muted">{item.stageLabel} · {item.sources.join("、")}</div>
             <p className="mt-2 text-sm leading-6">{item.summary}</p>

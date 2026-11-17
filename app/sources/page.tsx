@@ -32,7 +32,7 @@ export default function SourcesPage() {
   }, []);
   return (
     <Shell>
-      <h1 className="display text-3xl sm:text-4xl">数据源</h1>
+      <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">数据源</h1>
       <p className="mt-2 max-w-2xl text-sm text-muted">每个采集器单独失败。缺密钥的来源会停在「未启用」，页面其他部分继续工作。</p>
       <div className="mt-5 grid gap-3 md:grid-cols-2">
         {sources.map((source) => (

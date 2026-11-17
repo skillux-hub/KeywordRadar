@@ -158,6 +158,24 @@ export function keywordDetail(id: number) {
   };
 }
 
+function loadKpis() {
+  const day = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+  const start = new Date(`${day}T00:00:00+08:00`).toISOString();
+  const leads = all<{ lead_hours: number }>(
+    "select lead_hours from terms where lead_hours is not null and lead_hours > 0 and ifnull(google_at_discovery, 0) = 0",
+  );
+  const statuses = all<{ status: string }>("select status from source_status");
+  return {
+    newToday: num(get<{ c: number }>("select count(*) as c from terms where first_seen_at >= ?", start)?.c),
+    blueOcean: num(get<{ c: number }>("select count(*) as c from term_analysis where competition_label = '蓝海'")?.c),
+    avgLeadHours: leads.length ? Math.round((leads.reduce((sum, row) => sum + num(row.lead_hours), 0) / leads.length) * 10) / 10 : null,
+    leadSamples: leads.length,
+    sourcesOk: statuses.filter((row) => row.status === "ok").length,
+    sourcesError: statuses.filter((row) => row.status === "error").length,
+    sourcesTotal: statuses.length,
+  };
+}
+
 export function jobStatus() {
   const job = get<Record<string, unknown>>("select * from job_state where id = 1");
   const x = get<{ status: string; message: string }>("select status, message from source_status where source = 'x'");
@@ -171,6 +189,7 @@ export function jobStatus() {
     lastError: job?.last_error ? String(job.last_error) : "",
     trigger: job?.trigger ? String(job.trigger) : "",
     termCount: num(get<{ c: number }>("select count(*) as c from terms")?.c),
+    kpis: loadKpis(),
     xDisabled: !process.env.X_BEARER_TOKEN,
     xMessage: process.env.X_BEARER_TOKEN
       ? x?.message || "已配置 token，等待本轮时间线"

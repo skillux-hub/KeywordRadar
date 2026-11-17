@@ -29,7 +29,7 @@ export default function FeedsPage() {
     <Shell>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="display text-3xl sm:text-4xl">行业动态</h1>
+          <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">行业动态</h1>
           <p className="mt-2 text-sm text-muted">Reddit 新帖、X 大V时间线、竞品 sitemap 新 URL。按行业看，不按关键词打散。</p>
         </div>
         <select className="h-10 w-full rounded-full border border-border bg-card px-3 text-sm sm:w-auto" value={industry} onChange={(event) => setIndustry(event.target.value)}>
