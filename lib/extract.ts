@@ -32,7 +32,7 @@ const HEAD_SINGLE = new Set(
 );
 
 const NARRATIVE = new Set(
-  "have has had argued argues argue provide provides provided say says said drop drops seem seems include includes work works worked feel feels felt become becomes became mean means meant".split(/\s+/),
+  "have has had argued argues argue provide provides provided say says said drop drops seem seems include includes work works worked feel feels felt become becomes became mean means meant always instead without whether won".split(/\s+/),
 );
 
 const BLOCK = new Set([
@@ -120,9 +120,40 @@ function acceptPhrase(phrase: string, kind: Phrase["kind"]) {
     if (!only.includes(".") && kind !== "repo" && kind !== "product" && kind !== "hashtag") return null;
   }
   if ((kind === "title" || kind === "slug") && words.some((word) => NARRATIVE.has(word))) return null;
-  if (kind === "title" && (words.length < 2 || words.length > 5)) return null;
+  if (kind === "title" && (words.length < 2 || words.length > 4)) return null;
+  if (isNoiseTerm(normalized)) return null;
   return normalized;
 }
+
+const NOISE_COMPACT = new Set(
+  "techseo aiseo gamedev indiegame lowpoly pixelart skincareroutine ceraveskincare hyaluronicacid tiktokshowcase producthunt buildinpublic geovision rankproseo customsoftware softwaredevelopment productmanagement elearning".split(/\s+/),
+);
+
+export function isNoiseTerm(normalized: string) {
+  const words = normalized.split(" ").filter(Boolean);
+  const compact = words.join("");
+  if (!compact || compact.length < 3) return true;
+  if (/^x[0-9a-f]{3,5}$/i.test(compact)) return true;
+  if (/[a-z](19|20)\d{2}$/.test(compact)) return true;
+  if (NOISE_COMPACT.has(compact)) return true;
+  if (words.length === 1 && (HEAD_SINGLE.has(words[0]) || GENERIC.has(words[0]) || NARRATIVE.has(words[0]) || ESTABLISHED.has(words[0]))) return true;
+  if (words.some((word) => NARRATIVE.has(word)) && !words.includes("vs")) return true;
+  if (words.some((word) => MONTHS.has(word)) || words[0] === "general") return true;
+  if (/dailythread$|weeklythread$|megathread|showcase$/.test(compact)) return true;
+  const content = words.filter((word) => !STOP.has(word) && !GENERIC.has(word) && !HEAD_SINGLE.has(word) && !SOFT.has(word));
+  if (!content.length) return true;
+  if (words.length >= 3 && content.length < 2 && !words.includes("vs")) return true;
+  if (words.length > 5 && !words.includes("vs")) return true;
+  return false;
+}
+
+const ESTABLISHED = new Set(
+  "typescript javascript python pytorch react nextjs openai google amazon microsoft apple meta nvidia coindesk blackrock bitcoin ethereum automoderator chatgpt copilot claude gemini technicalseo reddit youtube tiktok instagram facebook shopify wordpress woocommerce".split(/\s+/),
+);
+const MONTHS = new Set("january february march april may june july august september october november december".split(" "));
+const SOFT = new Set(
+  "tab accept changes change general major non current platform store development environment hardware software system project projects data model service services tool tools agent agents daily weekly thread mega facing won base code review reviews fix fixes report reports above dont stop below into just really very much many".split(/\s+/),
+);
 
 function pushPhrase(bucket: Phrase[], original: string, phrase: string, kind: Phrase["kind"], always: boolean) {
   const term = acceptPhrase(phrase, kind);
@@ -187,7 +218,7 @@ export function phrasesFromText(input: { title?: string; body?: string; productN
     const raw = match[1];
     const lower = raw.toLowerCase();
     const shaped = /[a-z][A-Z]|[A-Z][a-z]+[A-Z]|[0-9]/.test(raw);
-    if (!shaped || HEAD_SINGLE.has(lower) || GENERIC.has(lower) || /^(education|elearning|technology|development|management|learning|softwaredevelopment|customsoftware|productmanagement)$/.test(lower)) continue;
+    if (!shaped || HEAD_SINGLE.has(lower) || GENERIC.has(lower) || isNoiseTerm(lower)) continue;
     pushPhrase(phrases, raw, raw, "hashtag", true);
   }
   for (const match of blob.matchAll(/\b((?:[A-Z][a-z]+){2,}[A-Za-z0-9]*)\b/g)) {

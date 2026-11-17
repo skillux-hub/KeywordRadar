@@ -1,6 +1,6 @@
 import { SOURCE_LABEL } from "./catalog";
 import { all, get, num, run } from "./db";
-import { detectIntent, painNote } from "./extract";
+import { detectIntent, isNoiseTerm, normalize, painNote } from "./extract";
 import { clamp } from "./utils";
 
 const EARLY = new Set(["x", "reddit", "bluesky", "hn", "producthunt", "youtube", "stackexchange", "tiktok", "discord", "telegram", "quora", "github"]);
@@ -55,7 +55,10 @@ export function scoreAll() {
 
   for (const term of terms) {
     const obs = all<Obs>("select source, collected_at, count, engagement, industry, seed_id from term_observations where term_id = ?", term.id);
-    if (!obs.length) continue;
+    if (!obs.length || isNoiseTerm(normalize(term.display))) {
+      dropTerm(term.id);
+      continue;
+    }
     const sources = [...new Set(obs.map((row) => row.source))];
     const early = sources.filter((source) => EARLY.has(source));
     const published = sources.filter((source) => PUBLISHED.has(source));
@@ -96,6 +99,10 @@ export function scoreAll() {
       term.id,
     );
     if (sites.length >= 2) discovery += Math.min(14, (sites.length - 1) * 5);
+    const peakMentions = Math.max(...obs.map((row) => num(row.count)));
+    const strongEvidence = sources.length >= 2 || peakMentions >= 2;
+    if (!strongEvidence) discovery *= 0.38;
+    else if (sources.length >= 2) discovery += 8;
     if (onGoogle) discovery *= 0.52;
     discovery = clamp(discovery, 0, 100);
 
@@ -156,6 +163,16 @@ export function scoreAll() {
       run("insert or ignore into term_seeds (term_id, seed_id) values (?, ?)", term.id, seedId);
     }
   }
+}
+
+function dropTerm(id: number) {
+  run("delete from term_observations where term_id = ?", id);
+  run("delete from term_evidence where term_id = ?", id);
+  run("delete from term_analysis where term_id = ?", id);
+  run("delete from term_sources where term_id = ?", id);
+  run("delete from term_industries where term_id = ?", id);
+  run("delete from term_seeds where term_id = ?", id);
+  run("delete from terms where id = ?", id);
 }
 
 function lifecycleDurability(obs: Obs[], now: number) {

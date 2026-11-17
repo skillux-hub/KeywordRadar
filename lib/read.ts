@@ -39,9 +39,14 @@ export function listKeywords(filters: Filters) {
     sql += " and t.stage = ?";
     params.push(filters.stage);
   }
-  if (filters.seed) {
-    sql += " and exists (select 1 from term_seeds ts where ts.term_id = t.id and ts.seed_id = ?)";
-    params.push(Number(filters.seed));
+  if (filters.seed === "none") {
+    sql += " and 0";
+  } else if (filters.seed) {
+    const ids = filters.seed.split(",").map((item) => Number(item)).filter((item) => Number.isInteger(item) && item > 0);
+    if (ids.length) {
+      sql += ` and exists (select 1 from term_seeds ts where ts.term_id = t.id and ts.seed_id in (${ids.map(() => "?").join(",")}))`;
+      params.push(...ids);
+    }
   }
   if (filters.q) {
     sql += " and (t.normalized like ? or t.display like ?)";

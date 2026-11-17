@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Download, RefreshCw, Waves } from "lucide-react";
+import { SeedSelect } from "@/components/seed-select";
 import { Shell } from "@/components/shell";
 import { Sparkline } from "@/components/sparkline";
 import { SourceMark } from "@/components/source-mark";
@@ -65,19 +66,34 @@ export function Dashboard() {
   const [summary, setSummary] = useState({ total: 0 });
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
-  const [topic, setTopic] = useState("");
-  const [region, setRegion] = useState("US");
-  const [industry, setIndustry] = useState("");
+  const [picked, setPicked] = useState<number[]>([]);
+  const [seedReady, setSeedReady] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState<Filters>({ industry: "", source: "", stage: "", window: "7d", seed: "", q: "" });
+  const seenSeeds = useRef<number[]>([]);
+
+  useEffect(() => {
+    const ids = seeds.map((seed) => seed.id);
+    const previous = new Set(seenSeeds.current);
+    setPicked((current) => {
+      const alive = current.filter((id) => ids.includes(id));
+      const added = ids.filter((id) => !previous.has(id));
+      if (seenSeeds.current.length === 0 && current.length === 0) return ids;
+      return [...alive, ...added];
+    });
+    seenSeeds.current = ids;
+    setSeedReady(true);
+  }, [seeds]);
 
   const query = useMemo(() => {
     const params = new URLSearchParams();
     Object.entries(filters).forEach(([key, value]) => {
       if (value) params.set(key, value);
     });
+    if (seedReady && seeds.length && picked.length === 0) params.set("seed", "none");
+    else if (picked.length > 0 && picked.length < seeds.length) params.set("seed", picked.join(","));
     return params.toString();
-  }, [filters]);
+  }, [filters, picked, seeds.length, seedReady]);
 
   useEffect(() => {
     void fetch("/api/meta").then((res) => res.json()).then(setMeta);
@@ -139,21 +155,19 @@ export function Dashboard() {
     if (!data.started) setError("已有一轮采集在跑");
   }
 
-  async function addSeed(event: React.FormEvent) {
-    event.preventDefault();
+  async function addSeed(topic: string, region: string) {
     const res = await fetch("/api/seeds", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ topic, region, industry: industry || null }),
+      body: JSON.stringify({ topic, region }),
     });
+    const data = await res.json();
     if (!res.ok) {
-      const data = await res.json();
       setError(data.error || "种子没有加上");
       return;
     }
-    setTopic("");
-    const data = await fetch("/api/seeds").then((item) => item.json());
-    setSeeds(data.seeds);
+    const next = await fetch("/api/seeds").then((item) => item.json());
+    setSeeds(next.seeds);
   }
 
   async function removeSeed(id: number) {
@@ -170,7 +184,7 @@ export function Dashboard() {
         <div className="min-w-0">
           <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-faint">Keyword radar</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-[28px]">早于 Google 的搜索机会</h1>
-          <p className="mt-1 max-w-2xl text-sm leading-6 text-muted">
+          <p className="mt-1 hidden max-w-2xl text-sm leading-6 text-muted sm:block">
             {summary.total} 个词在当前筛选里。上次采集 {status?.finishedAt ? ago(status.finishedAt) : "还没完成"}。
           </p>
         </div>
@@ -194,35 +208,25 @@ export function Dashboard() {
       {status?.xDisabled && <div className="mb-4 rounded-xl border border-border bg-accent px-3 py-2.5 text-sm text-muted">{status.xMessage}</div>}
       {error && <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950 dark:text-rose-200">{error}</div>}
 
-      <div className="mb-5 grid grid-cols-2 gap-3 xl:grid-cols-4">
+      <div className="mb-3 grid grid-cols-2 gap-2 xl:grid-cols-4 sm:mb-5 sm:gap-3">
         <Kpi label="今日新词" value={kpis ? String(kpis.newToday) : "—"} hint="上海时区，首次发现" />
         <Kpi label="蓝海" value={kpis ? String(kpis.blueOcean) : "—"} hint="竞争检测标成蓝海" />
         <Kpi label="平均领先" value={kpis?.avgLeadHours == null ? "—" : `${kpis.avgLeadHours}h`} hint={kpis?.leadSamples ? `${kpis.leadSamples} 个已回测` : "还没有闭环样本"} />
         <Kpi label="来源健康" value={kpis ? `${kpis.sourcesOk}/${kpis.sourcesTotal}` : "—"} hint={kpis ? `${kpis.sourcesError} 个失败` : "等待状态"} />
       </div>
 
-      <form onSubmit={addSeed} className="panel mb-3 grid gap-2 p-3 md:grid-cols-[minmax(0,1fr)_150px_160px_auto]">
-        <Input value={topic} onChange={(event) => setTopic(event.target.value)} placeholder="添加种子词，例如 AI coding tools" />
-        <select className="field" value={region} onChange={(event) => setRegion(event.target.value)}>
-          {meta?.regions.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-        </select>
-        <select className="field" value={industry} onChange={(event) => setIndustry(event.target.value)}>
-          <option value="">行业自动判断</option>
-          {meta?.industries.map((item) => <option key={item.slug} value={item.slug}>{item.nameZh}</option>)}
-        </select>
-        <Button type="submit">添加</Button>
-      </form>
-
-      <div className="mb-3 flex flex-wrap gap-1.5">
-        {seeds.map((seed) => (
-          <button key={seed.id} className="rounded-md border border-border bg-card px-2 py-1 text-xs text-muted transition hover:border-primary hover:text-foreground" onClick={() => void removeSeed(seed.id)}>
-            {seed.topic} · {seed.region} ×
-          </button>
-        ))}
+      <div className="mb-3">
+        <SeedSelect
+          seeds={seeds}
+          regions={meta?.regions || []}
+          selected={picked}
+          onChange={setPicked}
+          onAdd={addSeed}
+          onRemove={removeSeed}
+        />
       </div>
-
       <div className="mb-3 md:hidden">
-        <button type="button" className="field" onClick={() => setFiltersOpen(true)}>筛选{activeFilters ? ` · ${activeFilters}` : ""}</button>
+        <button type="button" className="field text-left" onClick={() => setFiltersOpen(true)}>筛选{activeFilters ? ` · ${activeFilters}` : ""}</button>
       </div>
       <div className="mb-3 hidden gap-2 md:grid md:grid-cols-5">
         <FilterFields meta={meta} filters={filters} setFilters={setFilters} />
