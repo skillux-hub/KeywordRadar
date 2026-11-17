@@ -1,6 +1,7 @@
 import { INTENT_LABEL, SOURCE_LABEL, industryName, stageMeta } from "./catalog";
 import { xProviderConfigured } from "./sources/x-provider";
 import { all, get, num } from "./db";
+import { slicePage } from "./pagination";
 import { readWeights } from "./score";
 
 export type Filters = {
@@ -19,10 +20,10 @@ function cutoff(window: string | undefined) {
   return new Date(Date.now() - days * 86400000).toISOString();
 }
 
-export function listKeywords(filters: Filters) {
+function keywordWhere(filters: Filters) {
   const since = cutoff(filters.window);
   const params: unknown[] = [];
-  let sql = "select * from terms t where 1 = 1";
+  let sql = "1 = 1";
   if (since) {
     sql += " and t.last_seen_at >= ?";
     params.push(since);
@@ -58,18 +59,40 @@ export function listKeywords(filters: Filters) {
     sql += " and (t.normalized like ? or t.display like ?)";
     params.push(`%${filters.q.toLowerCase()}%`, `%${filters.q}%`);
   }
-  sql += " order by t.opportunity_score desc, t.discovery_score desc";
-  const rows = all<Record<string, unknown>>(sql, ...params);
-  const items = rows.slice(0, 120).map(presentTerm);
+  return { where: sql, params };
+}
+
+export function listKeywords(filters: Filters & { page?: number; size?: number; all?: boolean }) {
+  const { where, params } = keywordWhere(filters);
+  const summaryRow = get<{ total: number; earliest: number; spreading: number; published: number; on_google: number; avg_score: number | null }>(
+    `select count(*) as total,
+            sum(case when t.stage = 'earliest' then 1 else 0 end) as earliest,
+            sum(case when t.stage = 'spreading' then 1 else 0 end) as spreading,
+            sum(case when t.stage = 'published' then 1 else 0 end) as published,
+            sum(case when t.stage = 'on_google' then 1 else 0 end) as on_google,
+            avg(t.opportunity_score) as avg_score
+     from terms t where ${where}`,
+    ...params,
+  );
+  const total = num(summaryRow?.total);
+  const size = filters.all ? Math.max(total, 1) : Math.max(1, filters.size || 20);
+  const pages = Math.max(1, Math.ceil(total / size));
+  const page = filters.all ? 1 : Math.min(Math.max(1, filters.page || 1), pages);
+  const rows = all<Record<string, unknown>>(
+    `select * from terms t where ${where} order by t.opportunity_score desc, t.discovery_score desc limit ? offset ?`,
+    ...params,
+    filters.all ? size : size,
+    filters.all ? 0 : (page - 1) * size,
+  );
   const summary = {
-    total: rows.length,
-    earliest: rows.filter((row) => row.stage === "earliest").length,
-    spreading: rows.filter((row) => row.stage === "spreading").length,
-    published: rows.filter((row) => row.stage === "published").length,
-    onGoogle: rows.filter((row) => row.stage === "on_google").length,
-    avgOpportunity: rows.length ? Math.round(rows.reduce((sum, row) => sum + num(row.opportunity_score), 0) / rows.length) : 0,
+    total,
+    earliest: num(summaryRow?.earliest),
+    spreading: num(summaryRow?.spreading),
+    published: num(summaryRow?.published),
+    onGoogle: num(summaryRow?.on_google),
+    avgOpportunity: summaryRow?.avg_score == null ? 0 : Math.round(num(summaryRow.avg_score)),
   };
-  return { items, summary };
+  return { items: rows.map(presentTerm), total, page, size: filters.all ? total : size, summary };
 }
 
 function presentTerm(row: Record<string, unknown>) {
@@ -106,14 +129,8 @@ function presentTerm(row: Record<string, unknown>) {
   };
 }
 
-export function keywordDetail(id: number) {
-  const row = get<Record<string, unknown>>("select * from terms where id = ?", id);
-  if (!row) return null;
-  const base = presentTerm(row);
-  const evidence = all<Record<string, unknown>>(
-    "select source, industry, url, title, quote, author, engagement, published_at, intent, kind from term_evidence where term_id = ? order by id desc limit 16",
-    id,
-  ).map((item) => ({
+function mapEvidence(item: Record<string, unknown>) {
+  return {
     source: String(item.source),
     sourceLabel: SOURCE_LABEL[String(item.source)] ?? String(item.source),
     industry: item.industry ? industryName(String(item.industry)) : "未分类",
@@ -124,7 +141,30 @@ export function keywordDetail(id: number) {
     engagement: item.engagement == null ? null : num(item.engagement),
     publishedAt: item.published_at ? String(item.published_at) : "",
     intent: INTENT_LABEL[String(item.intent || "unknown")] ?? "未判定",
-  }));
+  };
+}
+
+export function keywordDetail(id: number, pages: { evidencePage?: number; evidenceSize?: number; source?: string; mentionPage?: number; mentionSize?: number; demandPage?: number; demandSize?: number; clusterPage?: number; clusterSize?: number; serpPage?: number; serpSize?: number } = {}) {
+  const row = get<Record<string, unknown>>("select * from terms where id = ?", id);
+  if (!row) return null;
+  const base = presentTerm(row);
+  const evidenceSize = pages.evidenceSize || 10;
+  const evidenceFilter = pages.source && ["x", "reddit", "sitemap"].includes(pages.source) ? pages.source : "";
+  const evidenceParams: unknown[] = [id];
+  let evidenceWhere = "term_id = ?";
+  if (evidenceFilter) {
+    evidenceWhere += " and source = ?";
+    evidenceParams.push(evidenceFilter);
+  }
+  const evidenceTotal = num(get<{ c: number }>(`select count(*) as c from term_evidence where ${evidenceWhere}`, ...evidenceParams)?.c);
+  const evidencePages = Math.max(1, Math.ceil(evidenceTotal / evidenceSize) || 1);
+  const evidenceCurrent = Math.min(Math.max(1, pages.evidencePage || 1), evidencePages);
+  const evidence = all<Record<string, unknown>>(
+    `select source, industry, url, title, quote, author, engagement, published_at, intent, kind from term_evidence where ${evidenceWhere} order by id desc limit ? offset ?`,
+    ...evidenceParams,
+    evidenceSize,
+    (evidenceCurrent - 1) * evidenceSize,
+  ).map(mapEvidence);
   const analysis = get<Record<string, unknown>>("select * from term_analysis where term_id = ?", id);
   let outline: unknown = null;
   if (analysis?.cluster_json) {
@@ -134,17 +174,57 @@ export function keywordDetail(id: number) {
       outline = null;
     }
   }
-  let serp: unknown[] = [];
+  let serpAll: { url: string; domain: string; kind: string; pageKind?: string; homepage?: boolean }[] = [];
   if (analysis?.competition_json) {
     try {
-      serp = JSON.parse(String(analysis.competition_json)) as unknown[];
+      serpAll = JSON.parse(String(analysis.competition_json)) as typeof serpAll;
     } catch {
-      serp = [];
+      serpAll = [];
     }
   }
+  const serpPage = slicePage(serpAll, pages.serpPage || 1, pages.serpSize || 10);
+  const outlineRecord = (outline && typeof outline === "object" ? outline : {}) as { titles?: string[]; sections?: { heading: string; points: string[] }[]; related?: string[]; questions?: string[] };
+  const clusterPage = slicePage(outlineRecord.related ?? [], pages.clusterPage || 1, pages.clusterSize || 10);
+  const sectionPage = slicePage(outlineRecord.sections ?? [], pages.clusterPage || 1, pages.clusterSize || 10);
+  const mentionSize = pages.mentionSize || 10;
+  const mentionTotal = num(get<{ c: number }>(
+    `select count(*) as c from (
+       select distinct lower(author) as name from term_evidence where term_id = ? and source = 'x' and ifnull(author,'') != ''
+       union
+       select distinct lower(channel) as name from term_evidence where term_id = ? and source = 'reddit' and ifnull(channel,'') != ''
+     ) voices`,
+    id,
+    id,
+  )?.c);
+  const mentionPages = Math.max(1, Math.ceil(mentionTotal / mentionSize) || 1);
+  const mentionCurrent = Math.min(Math.max(1, pages.mentionPage || 1), mentionPages);
+  const mentionRows = all<{ platform: string; name: string }>(
+    `select platform, name from (
+       select distinct 'x' as platform, lower(author) as name from term_evidence where term_id = ? and source = 'x' and ifnull(author,'') != ''
+       union
+       select distinct 'reddit' as platform, lower(channel) as name from term_evidence where term_id = ? and source = 'reddit' and ifnull(channel,'') != ''
+     ) voices order by platform, name limit ? offset ?`,
+    id,
+    id,
+    mentionSize,
+    (mentionCurrent - 1) * mentionSize,
+  );
+  const demandSize = pages.demandSize || 10;
+  const demandTotal = num(get<{ c: number }>("select count(*) as c from demand_keywords where term_id = ?", id)?.c);
+  const demandPages = Math.max(1, Math.ceil(demandTotal / demandSize) || 1);
+  const demandCurrent = Math.min(Math.max(1, pages.demandPage || 1), demandPages);
+  const demands = all<{ keyword: string; decision: string; volume: number | null; trend: string | null; note: string | null }>(
+    "select keyword, decision, volume, trend, note from demand_keywords where term_id = ? order by case decision when '优先' then 0 when '观察' then 1 else 2 end, keyword limit ? offset ?",
+    id,
+    demandSize,
+    (demandCurrent - 1) * demandSize,
+  );
   return {
     ...base,
     evidence,
+    evidenceTotal,
+    evidencePage: evidenceCurrent,
+    evidenceSize,
     influencers: evidence.filter((item) => item.source === "x" && item.author),
     pages: evidence.filter((item) => item.source === "sitemap"),
     analysis: analysis
@@ -152,7 +232,12 @@ export function keywordDetail(id: number) {
           competitionLabel: analysis.competition_label ? String(analysis.competition_label) : "未检测",
           competitionScore: analysis.competition_score == null ? null : num(analysis.competition_score),
           competitionNote: String(analysis.competition_note || ""),
-          serp,
+          serp: serpPage.items,
+          serpTotal: serpPage.total,
+          serpPage: serpPage.page,
+          clusterTotal: clusterPage.total,
+          clusterPage: clusterPage.page,
+          sectionTotal: sectionPage.total,
           domain: analysis.domain ? String(analysis.domain) : "",
           domainStatus: String(analysis.domain_status || "unknown"),
           domainRegisteredAt: analysis.domain_registered_at ? String(analysis.domain_registered_at) : "",
@@ -176,25 +261,18 @@ export function keywordDetail(id: number) {
               return {};
             }
           })(),
-          outline,
+          outline: outline
+            ? { ...outlineRecord, related: clusterPage.items, sections: sectionPage.items }
+            : null,
           outlineMethod: String(analysis.outline_method || "heuristic"),
         }
       : null,
     weights: readWeights(),
-    voices: {
-      x: all<{ author: string }>(
-        "select distinct author from term_evidence where term_id = ? and source = 'x' and ifnull(author,'') != ''",
-        id,
-      ).map((row) => row.author),
-      reddit: all<{ channel: string }>(
-        "select distinct channel from term_evidence where term_id = ? and source = 'reddit' and ifnull(channel,'') != ''",
-        id,
-      ).map((row) => row.channel),
-    },
-    demands: all<{ keyword: string; decision: string; volume: number | null; trend: string | null; note: string | null }>(
-      "select keyword, decision, volume, trend, note from demand_keywords where term_id = ? order by case decision when '优先' then 0 when '观察' then 1 else 2 end, keyword",
-      id,
-    ),
+    voices: { items: mentionRows, total: mentionTotal, page: mentionCurrent, size: mentionSize },
+    demands,
+    demandTotal,
+    demandPage: demandCurrent,
+    demandSize,
   };
 }
 

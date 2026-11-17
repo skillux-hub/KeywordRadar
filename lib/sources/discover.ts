@@ -75,8 +75,8 @@ export async function runDiscovery(trigger: string, bypass = false) {
   let retired = 0;
   const notes: string[] = [];
   try {
-    const subs = await discoverSubreddits(bypass);
-    const accounts = await discoverAccounts(bypass);
+    const subs = await discoverSubreddits(bypass, id);
+    const accounts = await discoverAccounts(bypass, id);
     candidates = subs.candidates + accounts.candidates;
     added = subs.added + accounts.added;
     retired = subs.retired + accounts.retired;
@@ -108,7 +108,7 @@ export function discoveryDue(now = Date.now()) {
   return now - time >= discoveryLimit("DISCOVERY_INTERVAL_DAYS", 7) * 86400000;
 }
 
-async function discoverSubreddits(bypass: boolean) {
+async function discoverSubreddits(bypass: boolean, runId: number) {
   const limit = discoveryLimit("SUBREDDIT_DISCOVERY_LIMIT", 15);
   let candidates = 0;
   let added = 0;
@@ -230,14 +230,18 @@ async function discoverSubreddits(bypass: boolean) {
       reason: row.reason,
       score: communityScore({ subscribers: row.subscribers, postsPerDay: null, relevance: row.relevance, growth: null }),
     }));
-    const outcome = applyPool("reddit", industry.slug, await refineScores(industry.slug, scored, seedsFor(industry.slug)), limit);
+    const ranked = await refineScores(industry.slug, scored, seedsFor(industry.slug));
+    recordEvents(runId, "reddit", industry.slug, "candidate", ranked);
+    const outcome = applyPool("reddit", industry.slug, ranked, limit);
+    recordEvents(runId, "reddit", industry.slug, "added", outcome.add);
+    recordEvents(runId, "reddit", industry.slug, "retired", outcome.retire);
     added += outcome.added;
     retired += outcome.retired;
   }
   return { candidates, added, retired };
 }
 
-async function discoverAccounts(bypass: boolean) {
+async function discoverAccounts(bypass: boolean, runId: number) {
   const limit = discoveryLimit("X_DISCOVERY_LIMIT", 30);
   let candidates = 0;
   let added = 0;
@@ -371,7 +375,11 @@ async function discoverAccounts(bypass: boolean) {
       }
     }
     candidates += scored.size;
-    const outcome = applyPool("x", industry.slug, await refineScores(industry.slug, [...scored.values()], seedsFor(industry.slug)), limit);
+    const ranked = await refineScores(industry.slug, [...scored.values()], seedsFor(industry.slug));
+    recordEvents(runId, "x", industry.slug, "candidate", ranked);
+    const outcome = applyPool("x", industry.slug, ranked, limit);
+    recordEvents(runId, "x", industry.slug, "added", outcome.add);
+    recordEvents(runId, "x", industry.slug, "retired", outcome.retire);
     added += outcome.added;
     retired += outcome.retired;
   }
@@ -498,5 +506,24 @@ function applyPool(platform: "x" | "reddit", industry: string, candidates: Candi
   for (const item of [...forced, ...result.retire]) {
     run(`update ${table} set status = 'retired', retired_reason = ? where industry = ? and lower(${column}) = lower(?) and origin != 'user'`, item.reason, industry, item.key);
   }
-  return { added: result.add.length, retired: forced.length + result.retire.length };
+  const retire = [...forced, ...result.retire];
+  return { add: result.add, retire, added: result.add.length, retired: retire.length };
+}
+
+function recordEvents(runId: number, platform: string, industry: string, action: string, items: { key: string; reason: string; score?: number }[]) {
+  if (!runId || !items.length) return;
+  const now = new Date().toISOString();
+  for (const item of items) {
+    run(
+      "insert into discovery_events (run_id, platform, industry, account_key, action, reason, score, created_at) values (?, ?, ?, ?, ?, ?, ?, ?)",
+      runId,
+      platform,
+      industry,
+      item.key,
+      action,
+      item.reason,
+      item.score ?? null,
+      now,
+    );
+  }
 }

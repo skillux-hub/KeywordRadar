@@ -1,4 +1,5 @@
 import { guard } from "@/lib/auth";
+import { parsePage, parseSize } from "@/lib/pagination";
 import { listKeywords } from "@/lib/read";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +16,8 @@ export function GET(request: Request) {
     seed: url.searchParams.get("seed") || undefined,
     q: url.searchParams.get("q") || undefined,
     shape: url.searchParams.get("shape") || undefined,
+    page: parsePage(url.searchParams.get("page")),
+    size: parseSize(url.searchParams.get("size")),
   });
   return Response.json(data);
 }

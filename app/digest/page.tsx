@@ -2,8 +2,11 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { Pagination } from "@/components/pagination";
 import { Shell } from "@/components/shell";
 import { Button } from "@/components/ui/button";
+import { DETAIL_SIZES } from "@/lib/pagination";
 
 type Payload = {
   items: { id: number; term: string; stageLabel: string; opportunity: number; summary: string; sources: string[] }[];
@@ -12,21 +15,25 @@ type Payload = {
 };
 
 export default function DigestPage() {
+  const search = useSearchParams();
   const [digest, setDigest] = useState<{ createdAt: string; trigger: string; payload: Payload; delivery: Record<string, unknown> | null } | null>(null);
-  const [backtest, setBacktest] = useState<{ samples: number; avgLeadHours: number | null; weights: { earlyBonus: number }; trendReview?: { source: string; total: number; hits: number; hitRate: number; medianLeadDays: number | null }[] } | null>(null);
+  const [history, setHistory] = useState<{ items: { id: number; created_at: string; trigger: string }[]; total: number; page: number; size: number }>({ items: [], total: 0, page: 1, size: 20 });
+  const [backtest, setBacktest] = useState<{ samples: number; avgLeadHours: number | null; weights: { earlyBonus: number }; trendReview?: { source: string; total: number; hits: number; hitRate: number; medianLeadDays: number | null }[]; leads?: { items: { id: number; display: string; lead_hours: number }[]; total: number; page: number; size: number }; reviews?: { items: { term_id: number; display: string; source: string | null; hit: number; lead_days: number | null; reviewed_at?: string }[]; total: number; page: number; size: number } } | null>(null);
   const [schedule, setSchedule] = useState({ hour: 8, timeZone: "Asia/Shanghai" });
   const [sending, setSending] = useState(false);
 
   async function load() {
-    const data = await fetch("/api/digest").then((res) => res.json());
+    const data = await fetch(`/api/digest?${search.toString()}`).then((res) => res.json());
     setDigest(data.digest);
+    setHistory(data.history || { items: [], total: 0, page: 1, size: 20 });
     setBacktest(data.backtest);
     setSchedule(data.schedule);
   }
 
   useEffect(() => {
     void load();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
 
   async function send() {
     setSending(true);
@@ -86,6 +93,37 @@ export default function DigestPage() {
         {digest?.delivery && (
           <p className="text-xs text-muted">投递：{JSON.stringify(digest.delivery)}</p>
         )}
+      </section>
+
+      <section className="panel mt-4 p-4">
+        <h2 className="font-medium">日报记录</h2>
+        <ul className="mt-2 space-y-1 text-sm text-muted">
+          {history.items.map((item) => <li key={item.id}>{new Date(item.created_at).toLocaleString("zh-CN")} · {item.trigger}</li>)}
+          {!history.items.length && <li>还没有历史快照。</li>}
+        </ul>
+        <Pagination page={history.page} size={history.size} total={history.total} />
+      </section>
+
+      <section className="panel mt-4 p-4">
+        <h2 className="font-medium">领先样本</h2>
+        <ul className="mt-2 space-y-1 text-sm">
+          {backtest?.leads?.items.map((item) => (
+            <li key={item.id}><Link className="text-primary" href={`/terms/${item.id}`}>{item.display}</Link> <span className="text-muted">领先 {Number(item.lead_hours).toFixed(1)} 小时</span></li>
+          ))}
+          {!backtest?.leads?.items.length && <li className="text-muted">还没有样本。</li>}
+        </ul>
+        <Pagination page={backtest?.leads?.page || 1} size={backtest?.leads?.size || 10} total={backtest?.leads?.total || 0} pageParam="leadPage" sizeParam="leadSize" sizes={DETAIL_SIZES} />
+      </section>
+
+      <section className="panel mt-4 p-4">
+        <h2 className="font-medium">复核明细</h2>
+        <ul className="mt-2 space-y-1 text-sm">
+          {backtest?.reviews?.items.map((item) => (
+            <li key={`${item.term_id}-${item.reviewed_at || item.display}`}><Link className="text-primary" href={`/terms/${item.term_id}`}>{item.display}</Link> <span className="text-muted">{item.source || "未知来源"} · {item.hit ? "命中" : "未命中"}{item.lead_days != null ? ` · ${item.lead_days} 天` : ""}</span></li>
+          ))}
+          {!backtest?.reviews?.items.length && <li className="text-muted">还没有 14 日复核记录。</li>}
+        </ul>
+        <Pagination page={backtest?.reviews?.page || 1} size={backtest?.reviews?.size || 10} total={backtest?.reviews?.total || 0} pageParam="reviewPage" sizeParam="reviewSize" sizes={DETAIL_SIZES} />
       </section>
     </Shell>
   );

@@ -2,10 +2,16 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Pagination } from "@/components/pagination";
 import { Shell } from "@/components/shell";
 import { Button } from "@/components/ui/button";
+import { DETAIL_SIZES, parsePage, parseSize } from "@/lib/pagination";
 
 type Industry = { slug: string; nameZh: string };
+type EventRow = { id: number; platform: string; industry: string | null; account_key: string; action: string; reason: string | null; created_at: string };
+type EventPage = { items: EventRow[]; total: number; page: number; size: number };
+
 type Card = {
   platform: "x" | "reddit";
   key: string;
@@ -30,10 +36,42 @@ type Card = {
 
 const TALK: Record<string, string> = { ask: "求助/找工具", pain: "痛点吐槽", compare: "对比", recommend: "推荐", other: "其他" };
 
+function threadHref(search: { toString(): string }, itemPlatform: string, key: string) {
+  const params = new URLSearchParams(search.toString());
+  params.set("thread", `${itemPlatform}:${key}`);
+  params.delete("threadPage");
+  return params.toString();
+}
+
+function EventList({ title, rows, pageParam, sizeParam, empty }: { title: string; rows: EventPage; pageParam: string; sizeParam: string; empty: string }) {
+  return (
+    <section className="mt-4">
+      <h2 className="text-sm font-medium">{title}</h2>
+      {!rows.items.length && <p className="mt-2 text-sm text-muted">{empty}</p>}
+      <ul className="mt-2 space-y-1 text-sm">
+        {rows.items.map((row) => (
+          <li key={row.id} className="text-muted">{row.platform === "x" ? "@" : "r/"}{row.account_key} · {row.action === "added" ? "加入" : row.action === "retired" ? "退出" : "候选"}{row.reason ? ` · ${row.reason}` : ""}</li>
+        ))}
+      </ul>
+      <Pagination page={rows.page} size={rows.size} total={rows.total} pageParam={pageParam} sizeParam={sizeParam} sizes={DETAIL_SIZES} />
+    </section>
+  );
+}
+
 export function SourceBoard({ platform }: { platform: "x" | "reddit" | "all" }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const search = useSearchParams();
+  const page = parsePage(search.get("page"));
+  const size = parseSize(search.get("size"));
   const [items, setItems] = useState<Card[]>([]);
+  const [total, setTotal] = useState(0);
+  const [retired, setRetired] = useState<{ items: Card[]; total: number; page: number; size: number }>({ items: [], total: 0, page: 1, size: 10 });
+  const [candidates, setCandidates] = useState<EventPage>({ items: [], total: 0, page: 1, size: 10 });
+  const [history, setHistory] = useState<EventPage>({ items: [], total: 0, page: 1, size: 10 });
+  const [thread, setThread] = useState<{ items: { title: string; url: string; engagement: number; discussion: string }[]; total: number; page: number; size: number; topics: string[]; discussion: Card["discussion"] } | null>(null);
   const [industries, setIndustries] = useState<Industry[]>([]);
-  const [industry, setIndustry] = useState("");
+  const [industry, setIndustry] = useState(search.get("industry") || "");
   const [notice, setNotice] = useState("");
   const [run, setRun] = useState<{ started_at?: string; candidates?: number; added?: number; retired?: number; message?: string | null } | null>(null);
   const [limits, setLimits] = useState({ x: 30, reddit: 15, days: 7 });
@@ -43,22 +81,32 @@ export function SourceBoard({ platform }: { platform: "x" | "reddit" | "all" }) 
   const [error, setError] = useState("");
 
   async function load() {
-    const params = new URLSearchParams();
+    const params = new URLSearchParams(search.toString());
     if (platform !== "all") params.set("platform", platform);
     if (industry) params.set("industry", industry);
-    if (platform !== "all") params.set("detail", "1");
+    else params.delete("industry");
     const data = await fetch(`/api/intel?${params}`).then((res) => res.json());
-    setItems(data.items || []);
+    setItems(data.items?.items || []);
+    setTotal(data.items?.total || 0);
+    setRetired(data.retired || { items: [], total: 0, page: 1, size: 10 });
+    setCandidates(data.candidates || { items: [], total: 0, page: 1, size: 10 });
+    setHistory(data.history || { items: [], total: 0, page: 1, size: 10 });
     setIndustries(data.industries || []);
     setNotice(data.xNotice || "");
     setRun(data.run);
     setLimits(data.limits || limits);
+    const focus = search.get("thread") || "";
+    const [focusPlatform, focusKey] = focus.split(":");
+    if ((focusPlatform === "x" || focusPlatform === "reddit") && focusKey) {
+      const posts = new URLSearchParams({ platform: focusPlatform, key: focusKey, page: String(parsePage(search.get("threadPage"))), size: String(parseSize(search.get("threadSize"), 10, DETAIL_SIZES)) });
+      setThread(await fetch(`/api/intel/posts?${posts}`).then((res) => res.json()));
+    } else setThread(null);
   }
 
   useEffect(() => {
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [platform, industry]);
+  }, [platform, industry, search]);
 
   async function discover() {
     setBusy(true);
@@ -77,9 +125,8 @@ export function SourceBoard({ platform }: { platform: "x" | "reddit" | "all" }) 
     await load();
   }
 
-  const active = items.filter((item) => item.status === "active" || item.status === "paused");
-  const retired = items.filter((item) => item.status === "retired" || item.status === "rejected");
   const title = platform === "x" ? "X 大V" : platform === "reddit" ? "Reddit 板块" : "信息源";
+  const focus = search.get("thread") || "";
 
   return (
     <Shell>
@@ -115,13 +162,21 @@ export function SourceBoard({ platform }: { platform: "x" | "reddit" | "all" }) 
         </div>
       </section>
       <div className="mt-3">
-        <select className="field max-w-xs" value={industry} onChange={(event) => setIndustry(event.target.value)}>
+        <select className="field max-w-xs" value={industry} onChange={(event) => {
+          const value = event.target.value;
+          setIndustry(value);
+          const params = new URLSearchParams(search.toString());
+          if (value) params.set("industry", value); else params.delete("industry");
+          for (const key of ["page", "retiredPage", "candidatePage", "historyPage", "thread", "threadPage"]) params.delete(key);
+          const next = params.toString();
+          router.replace(next ? `${pathname}?${next}` : pathname, { scroll: false });
+        }}>
           <option value="">全部行业</option>
           {industries.map((item) => <option key={item.slug} value={item.slug}>{item.nameZh}</option>)}
         </select>
       </div>
       <div className="mt-4 grid gap-3">
-        {active.map((item) => (
+        {items.map((item) => (
           <article key={`${item.platform}:${item.key}`} className="panel p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
@@ -143,21 +198,20 @@ export function SourceBoard({ platform }: { platform: "x" | "reddit" | "all" }) 
               <div><dt>7 日趋势</dt><dd className="text-sm text-foreground">{item.trend == null ? "—" : `${item.trend.toFixed(2)}x`}</dd></div>
             </dl>
             {item.platform === "reddit" && item.activeUsers != null && <p className="mt-2 text-xs text-muted">在线约 {item.activeUsers}</p>}
-            {!!item.topics.length && <p className="mt-3 text-sm">讨论：{item.topics.join("、")}</p>}
-            {item.platform === "reddit" && (
-              <p className="mt-2 text-xs text-muted">
-                {Object.entries(item.discussion).filter(([, count]) => count).map(([kind, count]) => `${TALK[kind] || kind} ${count}`).join(" · ") || "讨论类型还没攒够帖子"}
-              </p>
-            )}
-            {!!item.posts.length && (
-              <ul className="mt-3 space-y-1 text-sm">
-                {item.posts.map((post) => (
-                  <li key={post.url || post.title}>
-                    {post.url ? <a className="text-primary hover:underline" href={post.url} target="_blank" rel="noreferrer">{post.title}</a> : post.title}
-                    <span className="ml-2 text-xs text-faint">{TALK[post.discussion] || ""} · {post.engagement}</span>
-                  </li>
-                ))}
-              </ul>
+            {focus === `${item.platform}:${item.key}` && thread && (
+              <div className="mt-3">
+                {!!thread.topics.length && <p className="text-sm">讨论：{thread.topics.join("、")}</p>}
+                {item.platform === "reddit" && <p className="mt-1 text-xs text-muted">{Object.entries(thread.discussion).filter(([, count]) => count).map(([kind, count]) => `${TALK[kind] || kind} ${count}`).join(" · ")}</p>}
+                <ul className="mt-2 space-y-1 text-sm">
+                  {thread.items.map((post) => (
+                    <li key={post.url || post.title}>
+                      {post.url ? <a className="text-primary hover:underline" href={post.url} target="_blank" rel="noreferrer">{post.title}</a> : post.title}
+                      <span className="ml-2 text-xs text-faint">{TALK[post.discussion] || ""} · {post.engagement}</span>
+                    </li>
+                  ))}
+                </ul>
+                <Pagination page={thread.page} size={thread.size} total={thread.total} pageParam="threadPage" sizeParam="threadSize" sizes={DETAIL_SIZES} />
+              </div>
             )}
             {!!item.terms.length && (
               <p className="mt-3 text-xs text-muted">
@@ -171,21 +225,25 @@ export function SourceBoard({ platform }: { platform: "x" | "reddit" | "all" }) 
                 <Button size="sm" variant="outline" onClick={() => void act({ op: "pause", platform: item.platform, key: item.key })}>暂停</Button>
               )}
               <Button size="sm" variant="ghost" onClick={() => void act({ op: "remove", platform: item.platform, key: item.key })}>移除</Button>
+              <Link className="inline-flex h-8 items-center rounded-lg border border-border px-3 text-xs" href={`?${threadHref(search, item.platform, item.key)}`}>讨论</Link>
             </div>
           </article>
         ))}
-        {!active.length && <p className="panel px-4 py-10 text-center text-sm text-muted">这一筛里还没有跟踪对象。跑一次发现之后会自动补上。</p>}
+        {!items.length && <p className="panel px-4 py-10 text-center text-sm text-muted">这一筛里还没有跟踪对象。跑一次发现之后会自动补上。</p>}
       </div>
-      {!!retired.length && (
-        <section className="mt-4">
-          <h2 className="text-sm font-medium text-muted">已退出</h2>
-          <ul className="mt-2 space-y-1 text-sm text-muted">
-            {retired.slice(0, 12).map((item) => (
-              <li key={`${item.platform}:${item.key}`}>{item.label} · {item.retiredReason || "已退出"}</li>
-            ))}
-          </ul>
-        </section>
-      )}
+      <Pagination page={page} size={size} total={total} />
+      <EventList title="发现候选" rows={candidates} pageParam="candidatePage" sizeParam="candidateSize" empty="还没有候选记录。跑一次发现后会出现。" />
+      <EventList title="加入与退出" rows={history} pageParam="historyPage" sizeParam="historySize" empty="还没有加入或退出记录。" />
+      <section className="mt-4">
+        <h2 className="text-sm font-medium">已退出的来源</h2>
+        <ul className="mt-2 space-y-1 text-sm text-muted">
+          {retired.items.map((item) => (
+            <li key={`${item.platform}:${item.key}`}>{item.label} · {item.retiredReason || item.reason || "已退出"}</li>
+          ))}
+          {!retired.items.length && <li>这一页没有退出记录。</li>}
+        </ul>
+        <Pagination page={retired.page} size={retired.size} total={retired.total} pageParam="retiredPage" sizeParam="retiredSize" sizes={DETAIL_SIZES} />
+      </section>
       {platform !== "all" && (
         <details className="panel mt-4 p-4 text-sm">
           <summary className="cursor-pointer font-medium">手动添加（可选）</summary>

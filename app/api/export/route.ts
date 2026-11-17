@@ -14,6 +14,8 @@ export function GET(request: Request) {
     window: url.searchParams.get("window") || "7d",
     seed: url.searchParams.get("seed") || undefined,
     q: url.searchParams.get("q") || undefined,
+    shape: url.searchParams.get("shape") || undefined,
+    all: true,
   });
   const header = ["关键词", "阶段", "机会分", "发现分", "意图", "来源", "行业", "首次发现", "已上Google", "摘要"];
   const lines = items.map((item) =>

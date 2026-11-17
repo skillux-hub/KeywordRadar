@@ -1,7 +1,7 @@
 import { INDUSTRIES, industryName } from "../catalog";
 import { all, get, num, run } from "../db";
 import { xProviderConfigured } from "./x-provider";
-import { discussionBreakdown, topTopics } from "./stats";
+import { topTopics } from "./stats";
 import { parseSubredditInput, parseXInput } from "./metrics";
 
 export type SourceCard = {
@@ -33,45 +33,61 @@ function originLabel(origin: string) {
   return "自动发现";
 }
 
-export function listSources(platform: "x" | "reddit" | "all", industry = "", detailed = false): SourceCard[] {
-  const cards: SourceCard[] = [];
-  if (platform !== "reddit") cards.push(...rowsFor("x", detailed));
-  if (platform !== "x") cards.push(...rowsFor("reddit", detailed));
-  const filtered = industry ? cards.filter((card) => card.industries.includes(industry)) : cards;
-  return filtered.sort((a, b) => (b.heat ?? -1) - (a.heat ?? -1));
-}
-
-function rowsFor(platform: "x" | "reddit", detailed: boolean): SourceCard[] {
+function groupedSql(platform: "x" | "reddit", statuses: string[], industry: string) {
   const table = platform === "x" ? "x_accounts" : "subreddits";
   const column = platform === "x" ? "handle" : "name";
-  const rows = all<Record<string, unknown>>(`select * from ${table} where status != 'suggested'`);
-  const grouped = new Map<string, Record<string, unknown>[]>();
-  for (const row of rows) {
-    const key = String(row[column] || "").toLowerCase();
-    const list = grouped.get(key) ?? [];
-    list.push(row);
-    grouped.set(key, list);
+  const params: unknown[] = [...statuses];
+  let where = `status in (${statuses.map(() => "?").join(",")})`;
+  if (industry) {
+    where += " and industry = ?";
+    params.push(industry);
   }
-  return [...grouped.entries()].map(([key, group]) => {
-    const primary = [...group].sort((a, b) => num(b.heat_score) - num(a.heat_score))[0];
-    const posts = detailed
-      ? all<{ title: string | null; text: string | null; url: string | null; engagement: number | null; discussion_type: string | null; published_at: string | null }>(
-          "select title, text, url, engagement, discussion_type, published_at from source_posts where platform = ? and account_key = ? order by engagement desc limit 20",
-          platform,
-          key,
-        )
-      : [];
-    const terms = detailed
-      ? all<{ id: number; display: string }>(
-          platform === "x"
-            ? `select distinct t.id, t.display from terms t join term_evidence e on e.term_id = t.id
-               where e.source = 'x' and lower(e.author) = ? order by t.opportunity_score desc limit 8`
-            : `select distinct t.id, t.display from terms t join term_evidence e on e.term_id = t.id
-               where e.source = 'reddit' and lower(e.channel) = ? order by t.opportunity_score desc limit 8`,
-          key,
-        )
-      : [];
-    const active = group.find((row) => row.status === "active") ?? primary;
+  return {
+    sql: `select '${platform}' as platform, lower(${column}) as key, max(coalesce(heat_score, -1)) as heat from ${table} where ${where} group by lower(${column})`,
+    params,
+  };
+}
+
+export function listSources(platform: "x" | "reddit" | "all", industry: string, page: number, size: number, statuses = ["active", "paused"]) {
+  const parts = [];
+  if (platform !== "reddit") parts.push(groupedSql("x", statuses, industry));
+  if (platform !== "x") parts.push(groupedSql("reddit", statuses, industry));
+  const sql = parts.map((part) => part.sql).join(" union all ");
+  const params = parts.flatMap((part) => part.params);
+  const total = num(get<{ c: number }>(`select count(*) as c from (${sql}) sources`, ...params)?.c);
+  const pages = Math.max(1, Math.ceil(total / size) || 1);
+  const current = Math.min(page, pages);
+  const keys = all<{ platform: "x" | "reddit"; key: string }>(
+    `select platform, key from (${sql}) sources order by heat desc, platform, key limit ? offset ?`,
+    ...params,
+    size,
+    (current - 1) * size,
+  );
+  return { items: keys.map((row) => cardFor(row.platform, row.key, statuses)), total, page: current, size };
+}
+
+function cardFor(platform: "x" | "reddit", key: string, statuses: string[]): SourceCard {
+  const table = platform === "x" ? "x_accounts" : "subreddits";
+  const column = platform === "x" ? "handle" : "name";
+  const rows = all<Record<string, unknown>>(
+    `select * from ${table} where lower(${column}) = ? and status in (${statuses.map(() => "?").join(",")})`,
+    key,
+    ...statuses,
+  );
+  const group = rows;
+  const primary = [...group].sort((a, b) => num(b.heat_score) - num(a.heat_score))[0];
+  const terms = all<{ id: number; display: string }>(
+    platform === "x"
+      ? `select distinct t.id, t.display from terms t join term_evidence e on e.term_id = t.id
+         where e.source = 'x' and lower(e.author) = ? order by t.opportunity_score desc limit 8`
+      : `select distinct t.id, t.display from terms t join term_evidence e on e.term_id = t.id
+         where e.source = 'reddit' and lower(e.channel) = ? order by t.opportunity_score desc limit 8`,
+    key,
+  );
+  const active = group.find((row) => row.status === "active") ?? primary;
+  if (!active) {
+    return emptyCard(platform, key);
+  }
     return {
       platform,
       key,
@@ -88,18 +104,96 @@ function rowsFor(platform: "x" | "reddit", detailed: boolean): SourceCard[] {
       perDay: active.posts_per_day == null ? null : num(active.posts_per_day),
       avgEngagement: active.avg_engagement == null ? null : Math.round(num(active.avg_engagement)),
       trend: active.trend == null ? null : num(active.trend),
-      topics: detailed ? topTopics(posts.map((post) => `${post.title || ""} ${post.text || ""}`)) : [],
-      posts: posts.slice(0, 4).map((post) => ({
-        title: post.title || post.text || "帖子",
-        url: post.url || "",
-        engagement: num(post.engagement),
-        discussion: post.discussion_type || "other",
-        publishedAt: post.published_at || "",
-      })),
-      discussion: discussionBreakdown(posts.map((post) => post.discussion_type || "other")),
+      topics: [],
+      posts: [],
+      discussion: { ask: 0, pain: 0, compare: 0, recommend: 0, other: 0 },
       terms,
     };
-  });
+}
+
+function emptyCard(platform: "x" | "reddit", key: string): SourceCard {
+  return {
+    platform,
+    key,
+    label: platform === "x" ? `@${key}` : `r/${key}`,
+    status: "retired",
+    origin: "自动发现",
+    reason: "",
+    retiredReason: "",
+    industries: [],
+    industryLabels: [],
+    heat: null,
+    audience: null,
+    activeUsers: null,
+    perDay: null,
+    avgEngagement: null,
+    trend: null,
+    topics: [],
+    posts: [],
+    discussion: { ask: 0, pain: 0, compare: 0, recommend: 0, other: 0 },
+    terms: [],
+  };
+}
+
+export function listPosts(platform: "x" | "reddit", key: string, page: number, size: number) {
+  const total = num(get<{ c: number }>("select count(*) as c from source_posts where platform = ? and account_key = ?", platform, key.toLowerCase())?.c);
+  const pages = Math.max(1, Math.ceil(total / size) || 1);
+  const current = Math.min(page, pages);
+  const rows = all<{ title: string | null; text: string | null; url: string | null; engagement: number | null; discussion_type: string | null; published_at: string | null }>(
+    "select title, text, url, engagement, discussion_type, published_at from source_posts where platform = ? and account_key = ? order by coalesce(engagement, 0) desc, published_at desc limit ? offset ?",
+    platform,
+    key.toLowerCase(),
+    size,
+    (current - 1) * size,
+  );
+  const kinds = all<{ discussion_type: string | null; c: number }>(
+    "select discussion_type, count(*) as c from source_posts where platform = ? and account_key = ? group by discussion_type",
+    platform,
+    key.toLowerCase(),
+  );
+  const discussion = { ask: 0, pain: 0, compare: 0, recommend: 0, other: 0 };
+  for (const row of kinds) {
+    const count = num(row.c);
+    if (row.discussion_type === "ask" || row.discussion_type === "pain" || row.discussion_type === "compare" || row.discussion_type === "recommend") discussion[row.discussion_type] = count;
+    else discussion.other += count;
+  }
+  return {
+    items: rows.map((post) => ({
+      title: post.title || post.text || "帖子",
+      url: post.url || "",
+      engagement: num(post.engagement),
+      discussion: post.discussion_type || "other",
+      publishedAt: post.published_at || "",
+    })),
+    topics: topTopics(rows.map((post) => `${post.title || ""} ${post.text || ""}`)),
+    discussion,
+    total,
+    page: current,
+    size,
+  };
+}
+
+export function listEvents(action: "candidate" | "history", platform: "x" | "reddit" | "all", industry: string, page: number, size: number) {
+  const params: unknown[] = [];
+  let where = action === "candidate" ? "action = 'candidate'" : "action in ('added', 'retired')";
+  if (platform !== "all") {
+    where += " and platform = ?";
+    params.push(platform);
+  }
+  if (industry) {
+    where += " and industry = ?";
+    params.push(industry);
+  }
+  const total = num(get<{ c: number }>(`select count(*) as c from discovery_events where ${where}`, ...params)?.c);
+  const pages = Math.max(1, Math.ceil(total / size) || 1);
+  const current = Math.min(page, pages);
+  const items = all(
+    `select id, platform, industry, account_key, action, reason, score, created_at from discovery_events where ${where} order by id desc limit ? offset ?`,
+    ...params,
+    size,
+    (current - 1) * size,
+  );
+  return { items, total, page: current, size };
 }
 
 export function latestDiscovery() {

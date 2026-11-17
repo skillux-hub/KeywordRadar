@@ -2,13 +2,16 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Download, RefreshCw, Waves } from "lucide-react";
+import { Pagination } from "@/components/pagination";
 import { SeedSelect } from "@/components/seed-select";
 import { Shell } from "@/components/shell";
 import { Sparkline } from "@/components/sparkline";
 import { SourceMark } from "@/components/source-mark";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { parsePage, parseSize } from "@/lib/pagination";
 import { ago } from "@/lib/utils";
 
 type Meta = {
@@ -72,7 +75,13 @@ export function Dashboard() {
   const [seedReady, setSeedReady] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState<Filters>({ industry: "", source: "", stage: "", window: "7d", seed: "", q: "", shape: "" });
+  const [total, setTotal] = useState(0);
   const seenSeeds = useRef<number[]>([]);
+  const filterKey = useRef<string | null>(null);
+  const router = useRouter();
+  const search = useSearchParams();
+  const page = parsePage(search.get("page"));
+  const size = parseSize(search.get("size"));
 
   useEffect(() => {
     const ids = seeds.map((seed) => seed.id);
@@ -96,6 +105,20 @@ export function Dashboard() {
     else if (picked.length > 0 && picked.length < seeds.length) params.set("seed", picked.join(","));
     return params.toString();
   }, [filters, picked, seeds.length, seedReady]);
+
+  useEffect(() => {
+    if (filterKey.current == null) {
+      filterKey.current = query;
+      return;
+    }
+    if (filterKey.current === query) return;
+    filterKey.current = query;
+    if (!search.get("page")) return;
+    const params = new URLSearchParams(search.toString());
+    params.delete("page");
+    const next = params.toString();
+    router.replace(next ? `/?${next}` : "/", { scroll: false });
+  }, [query, router, search]);
 
   useEffect(() => {
     void fetch("/api/meta").then((res) => res.json()).then(setMeta);
@@ -127,7 +150,7 @@ export function Dashboard() {
   useEffect(() => {
     let stop = false;
     const tick = () => {
-      fetch(`/api/keywords?${query}`)
+      fetch(`/api/keywords?${query}${query ? "&" : ""}page=${page}&size=${size}`)
         .then(async (res) => {
           if (!res.ok) throw new Error("词表加载失败");
           return res.json();
@@ -136,6 +159,7 @@ export function Dashboard() {
           if (stop) return;
           setItems(data.items);
           setSummary(data.summary);
+          setTotal(Number(data.total || data.summary?.total || 0));
           setLoaded(true);
         })
         .catch(() => {
@@ -148,7 +172,7 @@ export function Dashboard() {
       stop = true;
       clearInterval(timer);
     };
-  }, [query, status?.running]);
+  }, [query, page, size, status?.running]);
 
   async function refresh() {
     setError("");
@@ -317,6 +341,7 @@ export function Dashboard() {
           </div>
         </div>
       )}
+      <Pagination page={page} size={size} total={total} />
     </Shell>
   );
 }

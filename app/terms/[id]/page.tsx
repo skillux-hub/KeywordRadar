@@ -2,7 +2,10 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Pagination } from "@/components/pagination";
 import { Shell } from "@/components/shell";
+import { DETAIL_SIZES } from "@/lib/pagination";
 import { Sparkline } from "@/components/sparkline";
 import { SourceMark } from "@/components/source-mark";
 import { ago } from "@/lib/utils";
@@ -25,7 +28,13 @@ type Detail = {
   spark: number[];
   nameScore: number | null;
   demands: { keyword: string; decision: string; volume: number | null; trend: string | null; note: string | null }[];
-  voices?: { x: string[]; reddit: string[] };
+  demandTotal?: number;
+  demandPage?: number;
+  demandSize?: number;
+  evidenceTotal?: number;
+  evidencePage?: number;
+  evidenceSize?: number;
+  voices?: { items: { platform: string; name: string }[]; total: number; page: number; size: number };
   onSuggest: boolean;
   onTrends: boolean;
   leadHours: number | null;
@@ -38,6 +47,11 @@ type Detail = {
     competitionScore: number | null;
     competitionNote: string;
     serp: { url: string; domain: string; kind: string; pageKind?: string; homepage?: boolean }[];
+    serpTotal?: number;
+    serpPage?: number;
+    clusterTotal?: number;
+    clusterPage?: number;
+    sectionTotal?: number;
     pageMix?: Record<string, number>;
     domain: string;
     domainStatus: string;
@@ -73,7 +87,10 @@ export default function TermPage({ params }: { params: Promise<{ id: string }> }
   const [id, setId] = useState("");
   const [data, setData] = useState<Detail | null>(null);
   const [error, setError] = useState("");
-  const [tab, setTab] = useState<(typeof TABS)[number]["id"]>("quotes");
+  const router = useRouter();
+  const pathname = usePathname();
+  const search = useSearchParams();
+  const tab = (TABS.some((item) => item.id === search.get("tab")) ? search.get("tab") : "quotes") as (typeof TABS)[number]["id"];
 
   useEffect(() => {
     void params.then((value) => setId(value.id));
@@ -81,14 +98,24 @@ export default function TermPage({ params }: { params: Promise<{ id: string }> }
 
   useEffect(() => {
     if (!id) return;
-    void fetch(`/api/keywords/${id}`)
+    const query = new URLSearchParams(search.toString());
+    query.set("tab", tab);
+    void fetch(`/api/keywords/${id}?${query}`)
       .then(async (res) => {
         if (!res.ok) throw new Error("没有这个词");
         return res.json();
       })
       .then(setData)
       .catch((reason: Error) => setError(reason.message));
-  }, [id]);
+  }, [id, search, tab]);
+
+  function openTab(next: (typeof TABS)[number]["id"]) {
+    const paramsNext = new URLSearchParams(search.toString());
+    paramsNext.set("tab", next);
+    for (const key of ["page", "serpPage", "clusterPage"]) paramsNext.delete(key);
+    const query = paramsNext.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }
 
   return (
     <Shell>
@@ -146,12 +173,11 @@ export default function TermPage({ params }: { params: Promise<{ id: string }> }
 
           <section className="panel p-4 sm:p-5">
             <h2 className="text-sm font-semibold">谁在说</h2>
-            <p className="mt-2 text-sm text-muted">
-              X：{data.voices?.x?.length ? data.voices.x.map((name) => `@${name}`).join("、") : "还没有跟踪账号提到"}
-            </p>
-            <p className="mt-1 text-sm text-muted">
-              Reddit：{data.voices?.reddit?.length ? data.voices.reddit.map((name) => `r/${name}`).join("、") : "还没有跟踪板块提到"}
-            </p>
+            <ul className="mt-2 space-y-1 text-sm text-muted">
+              {data.voices?.items.map((item) => <li key={`${item.platform}:${item.name}`}>{item.platform === "x" ? `@${item.name}` : `r/${item.name}`}</li>)}
+              {!data.voices?.items.length && <li>还没有跟踪账号或板块提到。</li>}
+            </ul>
+            <Pagination page={data.voices?.page || 1} size={data.voices?.size || 10} total={data.voices?.total || 0} pageParam="mentionPage" sizeParam="mentionSize" sizes={DETAIL_SIZES} />
           </section>
 
           <section className="panel p-4 sm:p-5">
@@ -165,6 +191,7 @@ export default function TermPage({ params }: { params: Promise<{ id: string }> }
                 </li>
               ))}
             </ul>
+            <Pagination page={data.demandPage || 1} size={data.demandSize || 10} total={data.demandTotal || 0} pageParam="demandPage" sizeParam="demandSize" sizes={DETAIL_SIZES} />
           </section>
 
           <section className="panel overflow-hidden">
@@ -173,7 +200,7 @@ export default function TermPage({ params }: { params: Promise<{ id: string }> }
                 <button
                   key={item.id}
                   type="button"
-                  onClick={() => setTab(item.id)}
+                  onClick={() => openTab(item.id)}
                   className={`shrink-0 border-b-2 px-3 py-2.5 text-sm transition ${tab === item.id ? "border-primary text-foreground" : "border-transparent text-muted hover:text-foreground"}`}
                 >
                   {item.label}
@@ -181,19 +208,22 @@ export default function TermPage({ params }: { params: Promise<{ id: string }> }
               ))}
             </div>
             <div className="p-4 sm:p-5">
-              {tab === "quotes" && <QuoteList items={data.evidence} empty="还没有摘录。" />}
-              {tab === "x" && <QuoteList items={data.evidence.filter((item) => item.source === "x")} empty="没有 X 大V提到。未配置 token 时这里是空的。" />}
-              {tab === "reddit" && <QuoteList items={data.evidence.filter((item) => item.source === "reddit")} empty="这轮没有 Reddit 讨论挂到这个词上。" />}
+              {tab === "quotes" && <QuoteList items={data.evidence} empty="还没有摘录。" total={data.evidenceTotal} page={data.evidencePage} size={data.evidenceSize} />}
+              {tab === "x" && <QuoteList items={data.evidence} empty="没有 X 大V提到。未配置接口时这里是空的。" total={data.evidenceTotal} page={data.evidencePage} size={data.evidenceSize} />}
+              {tab === "reddit" && <QuoteList items={data.evidence} empty="这轮没有 Reddit 讨论挂到这个词上。" total={data.evidenceTotal} page={data.evidencePage} size={data.evidenceSize} />}
               {tab === "sitemap" && (
+                <div>
                 <ul className="space-y-3 text-sm">
-                  {!data.pages.length && <li className="text-muted">还没有竞品新页面。</li>}
-                  {data.pages.map((page) => (
-                    <li key={page.url}>
+                  {!data.evidence.filter((item) => item.source === "sitemap").length && <li className="text-muted">还没有竞品新页面。</li>}
+                  {data.evidence.filter((item) => item.source === "sitemap").map((page) => (
+                    <li key={page.url || page.title}>
                       <a className="break-all font-medium text-primary hover:underline" href={page.url} target="_blank" rel="noreferrer">{page.title || page.url}</a>
                       <div className="text-xs text-faint">{page.author}</div>
                     </li>
                   ))}
                 </ul>
+                <Pagination page={data.evidencePage || 1} size={data.evidenceSize || 10} total={data.evidenceTotal || 0} sizes={DETAIL_SIZES} />
+                </div>
               )}
               {tab === "serp" && (
                 <div className="space-y-3 text-sm">
@@ -210,8 +240,9 @@ export default function TermPage({ params }: { params: Promise<{ id: string }> }
                         <a className="break-all text-primary hover:underline" href={row.url} target="_blank" rel="noreferrer">{row.domain || row.url}</a>
                         <span className="shrink-0 text-xs text-faint">{PAGE_KIND[row.pageKind || ""] || row.kind} · {row.homepage ? "首页" : "内页"}</span>
                       </li>
-                    ))}
-                  </ul>
+                  ))}
+                </ul>
+                <Pagination page={data.analysis?.serpPage || 1} size={10} total={data.analysis?.serpTotal || 0} pageParam="serpPage" sizeParam="serpSize" sizes={DETAIL_SIZES} />
                 </div>
               )}
               {tab === "outline" && <Outline data={data.analysis} />}
@@ -264,11 +295,12 @@ function Info({ title, body, extra }: { title: string; body: string; extra: stri
   );
 }
 
-function QuoteList({ items, empty }: { items: Evidence[]; empty: string }) {
-  if (!items.length) return <p className="text-sm text-muted">{empty}</p>;
+function QuoteList({ items, empty, total = 0, page = 1, size = 10 }: { items: Evidence[]; empty: string; total?: number; page?: number; size?: number }) {
   return (
+    <div>
+    {!items.length && <p className="text-sm text-muted">{empty}</p>}
     <ul className="space-y-4">
-      {items.slice(0, 8).map((item, index) => (
+      {items.map((item, index) => (
         <li key={`${item.url}-${index}`} className="text-sm">
           <div className="text-xs text-faint">{item.sourceLabel} · {item.intent} {item.author && `· ${item.author}`}</div>
           {item.url ? (
@@ -280,6 +312,8 @@ function QuoteList({ items, empty }: { items: Evidence[]; empty: string }) {
         </li>
       ))}
     </ul>
+    <Pagination page={page} size={size} total={total} sizes={DETAIL_SIZES} />
+    </div>
   );
 }
 
@@ -299,6 +333,8 @@ function Outline({ data }: { data: Detail["analysis"] }) {
           </ul>
         </div>
       ))}
+      {!!data.outline.related?.length && <p className="text-muted">相关词簇：{data.outline.related.join("、")}</p>}
+      <Pagination page={data.clusterPage || 1} size={10} total={Math.max(data.sectionTotal || 0, data.clusterTotal || 0)} pageParam="clusterPage" sizeParam="clusterSize" sizes={DETAIL_SIZES} />
     </div>
   );
 }

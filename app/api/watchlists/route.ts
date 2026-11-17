@@ -1,23 +1,43 @@
 import { guard } from "@/lib/auth";
 import { hostnameOf } from "@/lib/utils";
 import { INDUSTRIES } from "@/lib/catalog";
-import { all, get, run } from "@/lib/db";
+import { all, get, num, run } from "@/lib/db";
+import { parsePage, parseSize } from "@/lib/pagination";
 
 export const dynamic = "force-dynamic";
 
 export function GET(request: Request) {
   const denied = guard(request);
   if (denied) return denied;
+  const url = new URL(request.url);
+  const industry = url.searchParams.get("industry") || "";
+  const size = parseSize(url.searchParams.get("size"));
+  const suggestSize = parseSize(url.searchParams.get("suggestSize"), 20);
   return Response.json({
     industries: INDUSTRIES,
-    x: all("select id, industry, handle, display_name, status, origin, reason from x_accounts order by industry, status, handle"),
-    subreddits: all("select id, industry, name, status, origin, reason from subreddits order by industry, status, name"),
-    redditUsers: all("select id, industry, username, karma, status, origin, reason from reddit_users order by industry, status, username"),
-    sites: all("select id, industry, domain, name, status, origin, reason from sites order by industry, status, domain"),
-    newsletters: all("select id, industry, name, url, status from newsletters order by industry, name"),
-    youtube: all("select id, industry, name, channel_id, status from youtube_channels order by industry, name"),
-    medium: all("select id, industry, tag, status from medium_tags order by industry, tag"),
+    x: paged("x_accounts", "status, handle", industry, parsePage(url.searchParams.get("xPage")), size, "active"),
+    subreddits: paged("subreddits", "status, name", industry, parsePage(url.searchParams.get("subPage")), size, "active"),
+    redditUsers: paged("reddit_users", "status, username", industry, parsePage(url.searchParams.get("userPage")), size, "active"),
+    sites: paged("sites", "status, domain", industry, parsePage(url.searchParams.get("sitePage")), size, "active"),
+    xSuggested: paged("x_accounts", "handle", industry, parsePage(url.searchParams.get("xSuggest")), suggestSize, "suggested"),
+    subredditsSuggested: paged("subreddits", "name", industry, parsePage(url.searchParams.get("subSuggest")), suggestSize, "suggested"),
+    redditUsersSuggested: paged("reddit_users", "username", industry, parsePage(url.searchParams.get("userSuggest")), suggestSize, "suggested"),
+    sitesSuggested: paged("sites", "domain", industry, parsePage(url.searchParams.get("siteSuggest")), suggestSize, "suggested"),
   });
+}
+
+function paged(table: string, order: string, industry: string, page: number, size: number, status: string) {
+  const params: unknown[] = [status];
+  let where = "status = ?";
+  if (industry) {
+    where += " and industry = ?";
+    params.push(industry);
+  }
+  const total = num(get<{ c: number }>(`select count(*) as c from ${table} where ${where}`, ...params)?.c);
+  const pages = Math.max(1, Math.ceil(total / size) || 1);
+  const current = Math.min(page, pages);
+  const items = all(`select * from ${table} where ${where} order by ${order} limit ? offset ?`, ...params, size, (current - 1) * size);
+  return { items, total, page: current, size };
 }
 
 export async function POST(request: Request) {

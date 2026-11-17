@@ -306,6 +306,18 @@ function migrate(db: DatabaseSync) {
       retired INTEGER DEFAULT 0,
       message TEXT
     );
+    CREATE TABLE IF NOT EXISTS discovery_events (
+      id INTEGER PRIMARY KEY,
+      run_id INTEGER,
+      platform TEXT NOT NULL,
+      industry TEXT,
+      account_key TEXT NOT NULL,
+      action TEXT NOT NULL,
+      reason TEXT,
+      score REAL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_discovery_events ON discovery_events(action, created_at);
     CREATE TABLE IF NOT EXISTS http_cache (
       cache_key TEXT PRIMARY KEY,
       body TEXT NOT NULL,
