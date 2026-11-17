@@ -39,7 +39,7 @@ export default function WatchlistsPage() {
       <p className="mt-2 max-w-2xl text-sm text-muted">X 账号、Reddit 社区和竞品站按行业维护。系统只能建议新增，点「采用」才会进下一轮采集。不会关注任何 X 账号。</p>
       <div className="mt-4 flex gap-2 overflow-x-auto">
         {industries.map((item) => (
-          <button key={item.slug} className={`shrink-0 rounded-lg px-3 py-1.5 text-sm ${industry === item.slug ? "bg-primary text-primary-foreground" : "border border-border bg-card"}`} onClick={() => setIndustry(item.slug)}>
+          <button key={item.slug} className={`shrink-0 rounded-lg px-3 py-1.5 text-sm ${industry === item.slug ? "btn-primary" : "border border-border bg-card text-foreground hover:bg-accent"}`} onClick={() => setIndustry(item.slug)}>
             {item.nameZh}
           </button>
         ))}

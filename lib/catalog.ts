@@ -50,7 +50,7 @@ export const SOURCE_META: {
   { id: "medium", nameZh: "Medium", role: "discovery", keys: "无需密钥（标签 RSS）" },
   { id: "googlenews", nameZh: "Google News", role: "discovery", keys: "无需密钥（RSS，作新闻信号，不是趋势验证）" },
   { id: "sitemap", nameZh: "Sitemap 监控", role: "watch", keys: "无需密钥；遵守 robots.txt" },
-  { id: "x", nameZh: "X 大V监控", role: "watch", keys: "X_BEARER_TOKEN" },
+  { id: "x", nameZh: "X 大V监控", role: "watch", keys: "X_BEARER_TOKEN，或 X_PROVIDER_BASE_URL + X_PROVIDER_API_KEY。都不配则只从社区文本发现账号" },
   { id: "tiktok", nameZh: "TikTok", role: "discovery", keys: "无密钥，尽力读取 Creative Center" },
   { id: "quora", nameZh: "Quora", role: "discovery", keys: "无密钥，尽力读取公开页" },
   { id: "amazon", nameZh: "Amazon Movers", role: "discovery", keys: "无密钥，尽力读取 Movers & Shakers" },
@@ -73,6 +73,28 @@ export const DEFAULT_SEEDS = [
   { topic: "indie games", region: "US", industry: "gaming" },
   { topic: "bitcoin etf", region: "US", industry: "crypto" },
   { topic: "personal finance apps", region: "US", industry: "finance" },
+];
+
+export const BOOTSTRAP_X: { industry: string; handle: string; name: string }[] = [
+  { industry: "ai", handle: "sama", name: "Sam Altman" },
+  { industry: "saas", handle: "paulg", name: "Paul Graham" },
+  { industry: "crypto", handle: "VitalikButerin", name: "Vitalik Buterin" },
+  { industry: "ecommerce", handle: "tobi", name: "Tobi Lutke" },
+  { industry: "marketing", handle: "randfish", name: "Rand Fishkin" },
+  { industry: "health", handle: "hubermanlab", name: "Andrew Huberman" },
+  { industry: "gaming", handle: "GeoffKeighley", name: "Geoff Keighley" },
+  { industry: "finance", handle: "morganhousel", name: "Morgan Housel" },
+];
+
+export const BOOTSTRAP_SUBREDDITS: { industry: string; name: string }[] = [
+  { industry: "ai", name: "MachineLearning" },
+  { industry: "saas", name: "startups" },
+  { industry: "crypto", name: "CryptoCurrency" },
+  { industry: "ecommerce", name: "ecommerce" },
+  { industry: "marketing", name: "SEO" },
+  { industry: "health", name: "Fitness" },
+  { industry: "gaming", name: "gaming" },
+  { industry: "finance", name: "personalfinance" },
 ];
 
 export const X_ACCOUNTS: { industry: string; handle: string; name: string }[] = [

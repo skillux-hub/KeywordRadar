@@ -1,6 +1,8 @@
 import { run } from "../db";
 import { withinDays } from "../extract";
 import { fetchJson } from "../http";
+import { recomputeHeat, saveCommunityPosts } from "../sources/stats";
+import { fetchXPosts, fetchXProfile, xProviderConfigured } from "../sources/x-provider";
 import { hitsFromDoc, result, type CollectContext, type CollectorResult, type FeedItem, type Hit, type Suggestion } from "./types";
 
 type Tweet = {
@@ -18,11 +20,10 @@ function engagement(tweet: Tweet) {
 }
 
 export async function collectX(ctx: CollectContext): Promise<CollectorResult> {
-  const token = process.env.X_BEARER_TOKEN;
-  if (!token) {
-    return result("x", "disabled", "未配置 X_BEARER_TOKEN。X 大V监控已暂停，不会影响其他来源。这是只读监控，不会关注任何账号。");
+  if (!xProviderConfigured()) {
+    return result("x", "disabled", "未配置 X 数据接口。账号名单仍会从社区里自动发现，时间线要等 X_BEARER_TOKEN 或第三方接口。不会关注任何账号。");
   }
-  const headers = { authorization: `Bearer ${token}` };
+  const headers = { authorization: `Bearer ${process.env.X_BEARER_TOKEN || process.env.X_PROVIDER_API_KEY || ""}` };
   const accounts = [...ctx.xAccounts].sort((a, b) => (a.lastFetched ?? "").localeCompare(b.lastFetched ?? "")).slice(0, 8);
   if (!accounts.length) return result("x", "error", "没有启用的 X 账号");
   const hits: Hit[] = [];
@@ -32,35 +33,54 @@ export async function collectX(ctx: CollectContext): Promise<CollectorResult> {
   let replyNote = "";
   const now = new Date().toISOString();
 
+  const seen = new Set<string>();
   for (const account of accounts) {
-    let userId = account.userId;
-    if (!userId) {
-      const user = await fetchJson<{ data?: { id?: string; name?: string } }>(
-        `https://api.x.com/2/users/by/username/${encodeURIComponent(account.handle)}`,
-        { headers, intervalMs: 400, timeoutMs: 12000, hostKey: "api.x.com" },
+    if (seen.has(account.handle.toLowerCase())) continue;
+    seen.add(account.handle.toLowerCase());
+    const profile = await fetchXProfile(account.handle);
+    const userId = profile?.id || account.userId;
+    if (profile) {
+      run(
+        "update x_accounts set user_id=coalesce(?, user_id), display_name=coalesce(display_name, ?), bio=?, followers=? where lower(handle)=lower(?)",
+        profile.id,
+        profile.name,
+        profile.bio,
+        profile.followers,
+        account.handle,
       );
-      if (user.status === 429) {
-        return result("x", "error", `读到 ${feed.length} 条后触发速率限制，已停止本轮`, { hits, feed, suggestions: suggestionsFrom(mentionBy) });
-      }
-      userId = user.data?.data?.id ?? null;
-      if (!userId) {
-        failures += 1;
-        continue;
-      }
-      run("update x_accounts set user_id=?, display_name=coalesce(display_name, ?) where id=?", userId, user.data?.data?.name ?? null, account.id);
     }
-    const timeline = await fetchJson<{ data?: Tweet[] }>(
-      `https://api.x.com/2/users/${userId}/tweets?max_results=10&tweet.fields=created_at,public_metrics,entities&exclude=retweets`,
-      { headers, intervalMs: 500, timeoutMs: 12000, hostKey: "api.x.com" },
-    );
-    if (timeline.status === 429) {
-      return result("x", "error", `速率限制。已保存 ${feed.length} 条时间线`, { hits, feed, suggestions: suggestionsFrom(mentionBy) });
-    }
-    if (!timeline.ok) {
+    const posts = await fetchXPosts(account.handle, userId);
+    if (!posts.length && !profile) {
       failures += 1;
       continue;
     }
-    for (const tweet of timeline.data?.data ?? []) {
+    saveCommunityPosts(
+      "x",
+      account.handle,
+      posts.map((post) => ({
+        id: post.id,
+        text: post.text,
+        title: post.text.split("\n")[0],
+        url: `https://x.com/${account.handle}/status/${post.id}`,
+        engagement: post.likes + post.reposts + post.replies + post.quotes,
+        publishedAt: post.createdAt,
+      })),
+    );
+    recomputeHeat("x", account.handle, profile?.followers ?? null);
+    for (const post of posts) {
+      const tweet: Tweet = {
+        id: post.id,
+        text: post.text,
+        created_at: post.createdAt || undefined,
+        public_metrics: { like_count: post.likes, retweet_count: post.reposts, reply_count: post.replies, quote_count: post.quotes },
+        entities: { mentions: post.mentions.map((username) => ({ username })) },
+      };
+      if (post.repostOf) {
+        const row = mentionBy.get(post.repostOf) ?? { industries: new Set<string>(), authors: new Set<string>(), engagement: 0 };
+        row.industries.add(account.industry);
+        row.authors.add(account.handle);
+        mentionBy.set(post.repostOf, row);
+      }
       if (!tweet.text || !withinDays(tweet.created_at, 7)) continue;
       const url = `https://x.com/${account.handle}/status/${tweet.id}`;
       const score = engagement(tweet);
@@ -73,6 +93,7 @@ export async function collectX(ctx: CollectContext): Promise<CollectorResult> {
           publishedAt: tweet.created_at,
           engagement: score,
           industry: account.industry,
+          channel: account.handle,
         }),
       );
       feed.push({
@@ -99,7 +120,7 @@ export async function collectX(ctx: CollectContext): Promise<CollectorResult> {
     run("update x_accounts set last_fetched_at=? where id=?", now, account.id);
   }
 
-  if (!replyNote && accounts[0]) {
+  if (!replyNote && accounts[0] && process.env.X_BEARER_TOKEN) {
     const reply = await fetchJson<{ data?: Tweet[]; includes?: { users?: { id: string; username: string }[] } }>(
       `https://api.x.com/2/tweets/search/recent?query=${encodeURIComponent(`to:${accounts[0].handle} -from:${accounts[0].handle}`)}&max_results=10&tweet.fields=created_at,public_metrics&expansions=author_id&user.fields=username`,
       { headers, intervalMs: 600, timeoutMs: 12000, hostKey: "api.x.com" },

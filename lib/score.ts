@@ -1,6 +1,7 @@
 import { SOURCE_LABEL } from "./catalog";
 import { all, get, num, run } from "./db";
 import { detectIntent, isNoiseTerm, normalize, painNote } from "./extract";
+import { redditSpreadBoost } from "./sources/metrics";
 import { clamp } from "./utils";
 
 const EARLY = new Set(["x", "reddit", "bluesky", "hn", "producthunt", "youtube", "stackexchange", "tiktok", "discord", "telegram", "quora", "github"]);
@@ -94,6 +95,14 @@ export function scoreAll() {
       term.id,
     );
     if (influencers.length >= 2) discovery += Math.min(18, (influencers.length - 1) * 6);
+    const redditChannels = all<{ channel: string | null; collected_at: string }>(
+      "select channel, collected_at from term_evidence where term_id = ? and source = 'reddit' and ifnull(channel, '') != ''",
+      term.id,
+    );
+    discovery += redditSpreadBoost(
+      redditChannels.map((row) => ({ channel: String(row.channel || ""), at: row.collected_at })),
+      now,
+    );
     if (sources.includes("reddit") && sources.includes("x")) discovery += 12;
     const sites = all<{ author: string }>(
       "select distinct author as author from term_evidence where term_id = ? and source = 'sitemap' and ifnull(author,'') != ''",

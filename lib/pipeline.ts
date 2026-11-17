@@ -12,6 +12,7 @@ import { collectReddit } from "./collectors/reddit";
 import { collectSitemaps } from "./collectors/sitemap";
 import { result, withTimeout, type CollectContext, type CollectorResult, type Hit, type Suggestion } from "./collectors/types";
 import { collectX } from "./collectors/x";
+import { discoveryDue, runDiscovery } from "./sources/discover";
 
 const lock = globalThis as unknown as { __radarLock?: boolean };
 
@@ -160,8 +161,8 @@ function persist(collector: CollectorResult, runId: number) {
     );
     for (const evidence of row.evidence) {
       run(
-        `insert into term_evidence (term_id, source, industry, url, title, quote, author, engagement, published_at, intent, kind, collected_at)
-         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `insert into term_evidence (term_id, source, industry, url, title, quote, author, channel, engagement, published_at, intent, kind, collected_at)
+         values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         termId,
         collector.source,
         evidence.industry,
@@ -169,6 +170,7 @@ function persist(collector: CollectorResult, runId: number) {
         evidence.title ?? null,
         evidence.quote ?? null,
         evidence.author ?? null,
+        evidence.channel ?? null,
         evidence.engagement ?? null,
         evidence.publishedAt ?? null,
         evidence.intent ?? null,
@@ -272,9 +274,18 @@ export async function refreshAll(trigger: string) {
   );
   const runRow = run("insert into runs (trigger, started_at, status) values (?, ?, 'running')", trigger, started);
   const runId = Number(runRow.lastInsertRowid);
+  const notes: string[] = [];
+  if (trigger === "discover" || discoveryDue()) {
+    run("update job_state set phase = ? where id = 1", "发现信息源");
+    try {
+      const discovery = await runDiscovery(trigger, trigger === "discover");
+      notes.push(`发现:${discovery.added}/${discovery.retired}`);
+    } catch (error) {
+      notes.push(`发现失败:${error instanceof Error ? error.message : "失败"}`);
+    }
+  }
   const ctx = loadContext();
   let done = 0;
-  const notes: string[] = [];
   for (const step of STEPS) {
     done += 1;
     run("update job_state set phase = ?, done = ? where id = 1", step.label, done);

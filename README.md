@@ -71,6 +71,16 @@ Google 不是发现源。每轮结束时，对分数最高的一批词做两件�
 
 回测只统计「第一次发现时 Google 还没有，后来才出现」的词，算平均领先小时。样本够了之后，会小步调整「早发现」权重，一天最多一次。
 
+## 信息源
+
+X 账号和 Reddit 板块以自动发现为主。每个行业只留一小撮起步种子，方便第一次有地方出发；之后每周按热度、更新频率和跟行业种子的重合度重排。
+
+- Reddit：用公开的板块搜索、帖子搜索、已跟踪板块侧栏里的 `r/`，以及雷达词出现过的板块。每个行业默认留下 15 个（`SUBREDDIT_DISCOVERY_LIMIT`）。
+- X：配了 `X_BEARER_TOKEN` 或 `X_PROVIDER_BASE_URL` + `X_PROVIDER_API_KEY` 时，会搜行业种子的高互动帖，记下作者、被提及和被转发的账号。没有接口时，从 Reddit、Hacker News、Product Hunt、GitHub 主页的 `twitter_username` 和新闻正文里抽账号。每个行业默认留下 30 个（`X_DISCOVERY_LIMIT`）。
+- 间隔由 `DISCOVERY_INTERVAL_DAYS` 控制，默认 7 天。信息源页可以点「立即发现」。
+- 不活跃或跟行业对不上的会自动退出，并写下原因。手动添加、暂停、移除只是例外，手动加进去的不会被自动清掉。
+- 账号和板块页能看到热度、讨论内容和这个来源贡献过的新词。总览按热度排序，可按行业筛。词详情里列出提到它的账号和板块。跨板块传播会抬高词的分数。
+
 ## 监控名单
 
 行业：人工智能、SaaS / 创业、加密、电商 / DTC、营销 / SEO、健康、游戏、金融。
@@ -96,6 +106,8 @@ Google 不是发现源。每轮结束时，对分数最高的一批词做两件�
 | 变量 | 作用 |
 | --- | --- |
 | `X_BEARER_TOKEN` | X API v2，只读时间线 |
+| `X_PROVIDER` / `X_PROVIDER_BASE_URL` / `X_PROVIDER_API_KEY` / `X_PROVIDER_AUTH` | 第三方 X 接口。不配官方 token 时走这里 |
+| `X_DISCOVERY_LIMIT` / `SUBREDDIT_DISCOVERY_LIMIT` / `DISCOVERY_INTERVAL_DAYS` | 每个行业自动保留的账号、板块数量，以及重排间隔 |
 | `REDDIT_CLIENT_ID` / `REDDIT_CLIENT_SECRET` | Reddit 官方 API |
 | `YOUTUBE_API_KEY` | YouTube 搜索、标签、评论 |
 | `GITHUB_TOKEN` | 提高 GitHub 搜索配额 |

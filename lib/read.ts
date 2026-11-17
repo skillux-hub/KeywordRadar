@@ -1,4 +1,5 @@
 import { INTENT_LABEL, SOURCE_LABEL, industryName, stageMeta } from "./catalog";
+import { xProviderConfigured } from "./sources/x-provider";
 import { all, get, num } from "./db";
 import { readWeights } from "./score";
 
@@ -180,6 +181,16 @@ export function keywordDetail(id: number) {
         }
       : null,
     weights: readWeights(),
+    voices: {
+      x: all<{ author: string }>(
+        "select distinct author from term_evidence where term_id = ? and source = 'x' and ifnull(author,'') != ''",
+        id,
+      ).map((row) => row.author),
+      reddit: all<{ channel: string }>(
+        "select distinct channel from term_evidence where term_id = ? and source = 'reddit' and ifnull(channel,'') != ''",
+        id,
+      ).map((row) => row.channel),
+    },
     demands: all<{ keyword: string; decision: string; volume: number | null; trend: string | null; note: string | null }>(
       "select keyword, decision, volume, trend, note from demand_keywords where term_id = ? order by case decision when '优先' then 0 when '观察' then 1 else 2 end, keyword",
       id,
@@ -219,9 +230,9 @@ export function jobStatus() {
     trigger: job?.trigger ? String(job.trigger) : "",
     termCount: num(get<{ c: number }>("select count(*) as c from terms")?.c),
     kpis: loadKpis(),
-    xDisabled: !process.env.X_BEARER_TOKEN,
-    xMessage: process.env.X_BEARER_TOKEN
-      ? x?.message || "已配置 token，等待本轮时间线"
-      : "未配置 X_BEARER_TOKEN。X 大V监控已暂停，不会影响其他来源。这是只读监控，不会关注任何账号。",
+    xDisabled: !xProviderConfigured(),
+    xMessage: xProviderConfigured()
+      ? x?.message || "已配置 X 数据接口，等待本轮时间线"
+      : "未配置 X 数据接口。时间线暂停，账号仍会从 Reddit、HN、GitHub 和新闻里自动发现。",
   };
 }

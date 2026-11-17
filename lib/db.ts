@@ -7,8 +7,8 @@ import {
   NEWSLETTERS,
   SITES,
   SOURCE_META,
-  SUBREDDITS,
-  X_ACCOUNTS,
+  BOOTSTRAP_SUBREDDITS,
+  BOOTSTRAP_X,
   YOUTUBE_CHANNELS,
 } from "./catalog";
 
@@ -280,6 +280,37 @@ function migrate(db: DatabaseSync) {
     );
     CREATE INDEX IF NOT EXISTS idx_obs_term ON term_observations(term_id, collected_at);
     CREATE INDEX IF NOT EXISTS idx_evi_term ON term_evidence(term_id, source);
+    CREATE TABLE IF NOT EXISTS source_posts (
+      id INTEGER PRIMARY KEY,
+      platform TEXT NOT NULL,
+      account_key TEXT NOT NULL,
+      external_id TEXT NOT NULL,
+      title TEXT,
+      text TEXT,
+      url TEXT,
+      engagement REAL,
+      score REAL,
+      comments REAL,
+      discussion_type TEXT,
+      published_at TEXT,
+      collected_at TEXT NOT NULL,
+      UNIQUE(platform, account_key, external_id)
+    );
+    CREATE TABLE IF NOT EXISTS discovery_runs (
+      id INTEGER PRIMARY KEY,
+      started_at TEXT NOT NULL,
+      finished_at TEXT,
+      trigger TEXT,
+      candidates INTEGER DEFAULT 0,
+      added INTEGER DEFAULT 0,
+      retired INTEGER DEFAULT 0,
+      message TEXT
+    );
+    CREATE TABLE IF NOT EXISTS http_cache (
+      cache_key TEXT PRIMARY KEY,
+      body TEXT NOT NULL,
+      stored_at TEXT NOT NULL
+    );
     CREATE INDEX IF NOT EXISTS idx_feed_industry ON feed_items(industry, source, fetched_at);
   `);
   db.prepare("INSERT OR IGNORE INTO job_state (id, running) VALUES (1, 0)").run();
@@ -290,6 +321,31 @@ function migrate(db: DatabaseSync) {
   ensureColumn(db, "term_analysis", "kgr", "REAL");
   ensureColumn(db, "term_analysis", "ads_present", "INTEGER");
   ensureColumn(db, "term_analysis", "page_mix_json", "TEXT");
+  ensureColumn(db, "term_evidence", "channel", "TEXT");
+  for (const column of [
+    ["x_accounts", "followers", "INTEGER"],
+    ["x_accounts", "bio", "TEXT"],
+    ["x_accounts", "heat_score", "REAL"],
+    ["x_accounts", "posts_per_day", "REAL"],
+    ["x_accounts", "avg_engagement", "REAL"],
+    ["x_accounts", "trend", "REAL"],
+    ["x_accounts", "stats_at", "TEXT"],
+    ["x_accounts", "discovered_reason", "TEXT"],
+    ["x_accounts", "retired_reason", "TEXT"],
+    ["x_accounts", "relevance", "REAL"],
+    ["subreddits", "subscribers", "INTEGER"],
+    ["subreddits", "active_users", "INTEGER"],
+    ["subreddits", "heat_score", "REAL"],
+    ["subreddits", "posts_per_day", "REAL"],
+    ["subreddits", "avg_engagement", "REAL"],
+    ["subreddits", "trend", "REAL"],
+    ["subreddits", "stats_at", "TEXT"],
+    ["subreddits", "discovered_reason", "TEXT"],
+    ["subreddits", "retired_reason", "TEXT"],
+    ["subreddits", "relevance", "REAL"],
+  ] as const) {
+    ensureColumn(db, column[0], column[1], column[2]);
+  }
 }
 
 function ensureColumn(db: DatabaseSync, table: string, column: string, type: string) {
@@ -306,13 +362,15 @@ function seed(db: DatabaseSync) {
   }
   if (count("x_accounts") === 0) {
     const stmt = db.prepare(
-      "INSERT OR IGNORE INTO x_accounts (industry, handle, display_name, status, origin) VALUES (?, ?, ?, 'active', 'seed')",
+      "INSERT OR IGNORE INTO x_accounts (industry, handle, display_name, status, origin, discovered_reason) VALUES (?, ?, ?, 'active', 'bootstrap', '起步种子，方便第一次发现有地方出发')",
     );
-    for (const row of X_ACCOUNTS) stmt.run(row.industry, row.handle.toLowerCase(), row.name);
+    for (const row of BOOTSTRAP_X) stmt.run(row.industry, row.handle.toLowerCase(), row.name);
   }
   if (count("subreddits") === 0) {
-    const stmt = db.prepare("INSERT OR IGNORE INTO subreddits (industry, name, status, origin) VALUES (?, ?, 'active', 'seed')");
-    for (const row of SUBREDDITS) stmt.run(row.industry, row.name);
+    const stmt = db.prepare(
+      "INSERT OR IGNORE INTO subreddits (industry, name, status, origin, discovered_reason) VALUES (?, ?, 'active', 'bootstrap', '起步板块，方便顺着侧栏和帖子继续发现')",
+    );
+    for (const row of BOOTSTRAP_SUBREDDITS) stmt.run(row.industry, row.name);
   }
   if (count("sites") === 0) {
     const stmt = db.prepare("INSERT OR IGNORE INTO sites (industry, domain, name, status, origin) VALUES (?, ?, ?, 'active', 'seed')");

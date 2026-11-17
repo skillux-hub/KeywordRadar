@@ -88,7 +88,7 @@ export function SeedSelect({
                     className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm"
                     onClick={() => onChange(checked ? selected.filter((id) => id !== seed.id) : [...selected, seed.id])}
                   >
-                    <span className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border ${checked ? "border-primary bg-primary text-primary-foreground" : "border-border"}`}>
+                    <span className={`inline-flex h-4 w-4 shrink-0 items-center justify-center rounded border ${checked ? "border-button bg-button text-white" : "border-border text-foreground"}`}>
                       {checked && <Check size={12} />}
                     </span>
                     <span className="truncate">{seed.topic}</span>
@@ -106,7 +106,7 @@ export function SeedSelect({
             <select className="field px-2" value={region} onChange={(event) => setRegion(event.target.value)}>
               {regions.map((item) => <option key={item.id} value={item.id}>{item.id}</option>)}
             </select>
-            <button type="submit" className="inline-flex h-9 items-center justify-center rounded-lg bg-primary px-2.5 text-primary-foreground disabled:opacity-50" disabled={busy || topic.trim().length < 2} aria-label="添加种子词">
+            <button type="submit" className="btn-primary inline-flex h-9 items-center justify-center rounded-lg px-2.5" disabled={busy || topic.trim().length < 2} aria-label="添加种子词">
               <Plus size={16} />
             </button>
           </form>

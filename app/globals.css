@@ -11,6 +11,10 @@
   --border: #e7e9ee;
   --primary: #2563eb;
   --primary-foreground: #ffffff;
+  --button: #2563eb;
+  --button-hover: #1d4ed8;
+  --button-active: #1e40af;
+  --button-disabled: #1e3a8a;
   --accent: #eef2f7;
   --ring: #2563eb;
   --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 10px 30px rgba(16, 24, 40, 0.04);
@@ -33,7 +37,11 @@
   --faint: #7c8494;
   --border: #262b36;
   --primary: #60a5fa;
-  --primary-foreground: #0b1220;
+  --primary-foreground: #ffffff;
+  --button: #2563eb;
+  --button-hover: #1d4ed8;
+  --button-active: #1e40af;
+  --button-disabled: #1e3a8a;
   --accent: #1c212b;
   --ring: #60a5fa;
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 12px 32px rgba(0, 0, 0, 0.28);
@@ -57,6 +65,10 @@
   --color-border: var(--border);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
+  --color-button: var(--button);
+  --color-button-hover: var(--button-hover);
+  --color-button-active: var(--button-active);
+  --color-button-disabled: var(--button-disabled);
   --color-accent: var(--accent);
   --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Noto Sans SC", "Microsoft YaHei", "Source Han Sans SC", sans-serif;
 }
@@ -75,8 +87,35 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-a { color: inherit; }
-button, input, select { font: inherit; color: inherit; }
+@layer base {
+  a { color: inherit; }
+  button, input, select { font: inherit; color: inherit; }
+}
+
+.btn-primary,
+.btn-primary:hover,
+.btn-primary:active,
+.btn-primary:focus,
+.btn-primary:focus-visible,
+.btn-primary:disabled {
+  color: #ffffff;
+  opacity: 1;
+}
+.btn-primary { background: var(--button); }
+.btn-primary:hover { background: var(--button-hover); }
+.btn-primary:active { background: var(--button-active); }
+.btn-primary:focus-visible {
+  outline: 2px solid var(--button);
+  outline-offset: 2px;
+}
+.btn-primary:disabled {
+  background: var(--button-disabled);
+  cursor: not-allowed;
+}
+.btn-primary svg {
+  color: #ffffff;
+  stroke: currentColor;
+}
 ::selection { background: color-mix(in srgb, var(--primary) 28%, transparent); }
 
 .panel {

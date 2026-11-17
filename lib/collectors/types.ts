@@ -20,6 +20,7 @@ export type Hit = {
   title?: string;
   quote?: string;
   author?: string;
+  channel?: string;
   engagement?: number;
   publishedAt?: string;
   intent?: Intent;
@@ -82,6 +83,7 @@ export type Doc = {
   body?: string;
   url?: string;
   author?: string;
+  channel?: string;
   publishedAt?: string;
   engagement?: number;
   industry?: string | null;
@@ -105,6 +107,7 @@ export function hitsFromDoc(doc: Doc): Hit[] {
     title: doc.title,
     quote: quoteAround(plain, phrase.term).slice(0, 220),
     author: doc.author,
+    channel: doc.channel,
     engagement: doc.engagement,
     publishedAt: doc.publishedAt,
     intent,

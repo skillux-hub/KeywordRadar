@@ -1,6 +1,8 @@
 import { hoursSince, withinDays } from "../extract";
 import { run } from "../db";
 import { fetchJson, fetchText } from "../http";
+import { classifyDiscussion } from "../sources/metrics";
+import { recomputeHeat, saveCommunityPosts } from "../sources/stats";
 import { readFeed } from "../rss";
 import { hitsFromDoc, result, type CollectContext, type CollectorResult, type FeedItem, type Hit, type Suggestion } from "./types";
 
@@ -93,9 +95,31 @@ export async function collectReddit(ctx: CollectContext): Promise<CollectorResul
 
   for (const sub of picked) {
     try {
-      const posts = token ? await loadJson(token, sub.name, "new") : await loadRss(sub.name);
-      const comments = token ? await loadJson(token, sub.name, "comments") : [];
-      const docs = [...posts, ...comments].slice(0, 16);
+      let posts = token ? await loadJson(token, sub.name, "new") : await loadPublic(sub.name, "new");
+      if (!posts.length) posts = await loadRss(sub.name);
+      const hot = token ? await loadJson(token, sub.name, "hot") : await loadPublic(sub.name, "hot");
+      const comments = token ? await loadJson(token, sub.name, "comments") : await loadPublic(sub.name, "comments");
+      const about = await loadAbout(sub.name, token);
+      if (about) {
+        run("update subreddits set subscribers = ?, active_users = ? where id = ?", about.subscribers, about.active, sub.id);
+      }
+      const docs = [...posts, ...hot, ...comments].slice(0, 24);
+      saveCommunityPosts(
+        "reddit",
+        sub.name,
+        docs.slice(0, 16).map((post) => ({
+          id: post.id || post.permalink || post.title || "",
+          title: post.title || "",
+          text: post.selftext || post.body || "",
+          url: (post.permalink || "").startsWith("http") ? post.permalink : post.permalink ? `https://www.reddit.com${post.permalink}` : undefined,
+          engagement: (post.score ?? 0) + (post.num_comments ?? 0),
+          score: post.score,
+          comments: post.num_comments,
+          publishedAt: post.created_utc ? new Date(post.created_utc * 1000).toISOString() : null,
+          discussion: classifyDiscussion(`${post.title || ""} ${post.selftext || post.body || ""}`),
+        })),
+      );
+      recomputeHeat("reddit", sub.name, about?.subscribers ?? null, about?.active ?? null);
       for (const post of docs) {
         const published = post.created_utc ? new Date(post.created_utc * 1000).toISOString() : undefined;
         if (published && !withinDays(published, 14)) continue;
@@ -114,6 +138,7 @@ export async function collectReddit(ctx: CollectContext): Promise<CollectorResul
           publishedAt: published,
           engagement: (post.score ?? 0) + (post.num_comments ?? 0),
           industry: sub.industry,
+          channel: sub.name,
         });
         hits.push(...docHits);
         if (url && (title || body)) {
@@ -214,7 +239,33 @@ export async function collectReddit(ctx: CollectContext): Promise<CollectorResul
   });
 }
 
-async function loadJson(token: string, sub: string, kind: "new" | "comments") {
+async function loadPublic(sub: string, kind: "new" | "hot" | "comments") {
+  const res = await fetchJson(`https://www.reddit.com/r/${encodeURIComponent(sub)}/${kind}.json?limit=12&raw_json=1`, {
+    intervalMs: 2200,
+    timeoutMs: 12000,
+    hostKey: "www.reddit.com",
+    headers: { "user-agent": UA, accept: "application/json" },
+  });
+  if (!res.ok) return [];
+  return fromListing(res.data);
+}
+
+async function loadAbout(sub: string, token: string | null) {
+  const url = token
+    ? `https://oauth.reddit.com/r/${encodeURIComponent(sub)}/about?raw_json=1`
+    : `https://www.reddit.com/r/${encodeURIComponent(sub)}/about.json?raw_json=1`;
+  const res = await fetchJson<{ data?: { subscribers?: number; accounts_active?: number; active_user_count?: number } }>(url, {
+    intervalMs: token ? 1100 : 2200,
+    timeoutMs: 12000,
+    hostKey: token ? "oauth.reddit.com" : "www.reddit.com",
+    headers: token ? { authorization: `Bearer ${token}`, "user-agent": UA } : { "user-agent": UA, accept: "application/json" },
+  });
+  const data = res.data?.data;
+  if (!res.ok || !data) return null;
+  return { subscribers: data.subscribers ?? null, active: data.accounts_active ?? data.active_user_count ?? null };
+}
+
+async function loadJson(token: string, sub: string, kind: "new" | "hot" | "comments") {
   const res = await fetchJson(`https://oauth.reddit.com/r/${encodeURIComponent(sub)}/${kind}?limit=15&raw_json=1`, {
     intervalMs: 1100,
     hostKey: "oauth.reddit.com",

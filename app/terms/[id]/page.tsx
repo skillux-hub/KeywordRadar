@@ -25,6 +25,7 @@ type Detail = {
   spark: number[];
   nameScore: number | null;
   demands: { keyword: string; decision: string; volume: number | null; trend: string | null; note: string | null }[];
+  voices?: { x: string[]; reddit: string[] };
   onSuggest: boolean;
   onTrends: boolean;
   leadHours: number | null;
@@ -141,6 +142,16 @@ export default function TermPage({ params }: { params: Promise<{ id: string }> }
             <Info title="Google" body={data.onSuggest ? "自动补全已经会写出这个词。" : "自动补全还没跟上。"} extra={data.onTrends ? "每日趋势里也出现了。" : data.googleAtDiscovery ? "第一次看见时 Google 就已经知道。" : data.leadHours ? `领先约 ${data.leadHours.toFixed(1)} 小时。` : "还在窗口里。"} />
             <Info title="竞争" body={`${data.analysis?.competitionLabel || "未检测"}${data.analysis?.serpShape ? ` · ${data.analysis.serpShape}` : ""}`} extra={`${data.analysis?.competitionNote || "这一轮还没拉 SERP。"}${data.analysis?.youngLoosened ? " 年轻词已放宽一档。" : ""}${data.analysis?.kgr != null ? ` KGR ${data.analysis.kgr}。` : ""}${data.analysis?.adsPresent == null ? "" : data.analysis.adsPresent ? " 有广告。" : " 无广告。"}`} />
             <Info title="域名窗口" body={domainLabel(data.analysis?.domainStatus || "unknown")} extra={`${data.analysis?.domain || "未检查"}。${data.analysis?.landNote || ""} ${data.analysis?.lifecycle || "观察中"}。`} />
+          </section>
+
+          <section className="panel p-4 sm:p-5">
+            <h2 className="text-sm font-semibold">谁在说</h2>
+            <p className="mt-2 text-sm text-muted">
+              X：{data.voices?.x?.length ? data.voices.x.map((name) => `@${name}`).join("、") : "还没有跟踪账号提到"}
+            </p>
+            <p className="mt-1 text-sm text-muted">
+              Reddit：{data.voices?.reddit?.length ? data.voices.reddit.map((name) => `r/${name}`).join("、") : "还没有跟踪板块提到"}
+            </p>
           </section>
 
           <section className="panel p-4 sm:p-5">
