@@ -73,13 +73,13 @@ export default function TermPage({ params }: { params: Promise<{ id: string }> }
       {!data && <div className="panel mt-4 px-5 py-10 text-sm text-muted">{error || "正在读取这个词的证据…"}</div>}
       {data && (
         <div className="mt-3 space-y-4">
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <div>
+          <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
+            <div className="min-w-0">
               <div className="text-xs text-muted">{data.industryLabels.join(" / ") || "未分类"} · {data.intentLabel} · {ago(data.firstSeen)}</div>
-              <h1 className="display mt-1 text-4xl">{data.term}</h1>
-              <p className="mt-2 max-w-3xl text-sm leading-6">{data.summary}</p>
+              <h1 className="display mt-1 break-words text-3xl sm:text-4xl">{data.term}</h1>
+              <p className="mt-2 max-w-3xl break-words text-sm leading-6">{data.summary}</p>
             </div>
-            <div className="panel px-5 py-3 text-right">
+            <div className="panel w-full px-5 py-3 text-left sm:w-auto sm:text-right">
               <div className="text-xs text-muted">机会分</div>
               <div className="display text-5xl">{data.opportunity}</div>
               <div className="text-xs">{data.stageLabel}</div>
@@ -119,8 +119,8 @@ export default function TermPage({ params }: { params: Promise<{ id: string }> }
               <ul className="mt-3 space-y-3">
                 {data.influencers.map((item, index) => (
                   <li key={`${item.url}-${index}`} className="text-sm">
-                    <a className="font-medium text-primary" href={item.url || `https://x.com/${item.author}`} target="_blank" rel="noreferrer">@{item.author}</a>
-                    <p className="text-muted">{item.quote}</p>
+                    <a className="break-all font-medium text-primary" href={item.url || `https://x.com/${item.author}`} target="_blank" rel="noreferrer">@{item.author}</a>
+                    <p className="break-words text-muted">{item.quote}</p>
                   </li>
                 ))}
               </ul>
@@ -131,8 +131,8 @@ export default function TermPage({ params }: { params: Promise<{ id: string }> }
                 {data.evidence.slice(0, 6).map((item, index) => (
                   <li key={index} className="text-sm">
                     <div className="text-xs text-muted">{item.sourceLabel} · {item.intent} {item.author && `· ${item.author}`}</div>
-                    {item.url ? <a className="text-primary" href={item.url} target="_blank" rel="noreferrer">{item.title || item.quote}</a> : <span>{item.title}</span>}
-                    {item.quote && <p className="text-muted">{item.quote}</p>}
+                    {item.url ? <a className="break-all text-primary" href={item.url} target="_blank" rel="noreferrer">{item.title || item.quote}</a> : <span className="break-words">{item.title}</span>}
+                    {item.quote && <p className="break-words text-muted">{item.quote}</p>}
                   </li>
                 ))}
               </ul>
@@ -145,7 +145,7 @@ export default function TermPage({ params }: { params: Promise<{ id: string }> }
             <ul className="mt-3 space-y-2 text-sm">
               {data.pages.map((page) => (
                 <li key={page.url}>
-                  <a className="text-primary" href={page.url} target="_blank" rel="noreferrer">{page.title || page.url}</a>
+                  <a className="break-all text-primary" href={page.url} target="_blank" rel="noreferrer">{page.title || page.url}</a>
                   <span className="ml-2 text-muted">{page.author}</span>
                 </li>
               ))}

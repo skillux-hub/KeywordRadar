@@ -64,6 +64,7 @@ export function Dashboard() {
   const [region, setRegion] = useState("US");
   const [industry, setIndustry] = useState("");
   const [filters, setFilters] = useState({ industry: "", source: "", stage: "", window: "7d", seed: "", q: "" });
+  const [filtersOpen, setFiltersOpen] = useState(false);
 
   const query = useMemo(() => {
     const params = new URLSearchParams();
@@ -154,10 +155,10 @@ export function Dashboard() {
 
   return (
     <Shell>
-      <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
-        <div>
+      <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between">
+        <div className="min-w-0">
           <p className="text-xs tracking-[0.16em] text-muted">OVERSEAS SEARCH · EARLY WINDOW</p>
-          <h1 className="display mt-1 text-4xl text-ink">在搜索框补全之前下手</h1>
+          <h1 className="display mt-1 text-3xl break-words text-ink sm:text-4xl">在搜索框补全之前下手</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-muted">
             发现来自 Reddit、Hacker News、GitHub、Product Hunt、Bluesky 和竞品新页面。Google 自动补全和每日趋势只用来确认：已经出现在 Google，就不再算最早的机会。
           </p>
@@ -177,7 +178,7 @@ export function Dashboard() {
       )}
       {error && <div className="mb-4 rounded-2xl border border-[#f0c9d0] bg-[#fff1f3] px-4 py-3 text-sm text-[#8d3d4e]">{error}</div>}
 
-      <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="mb-4 grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
         <Stat label="最早窗口" value={summary.earliest} hint="社区已出现，Google 还没有" />
         <Stat label="多源发酵" value={summary.spreading} hint="至少两个早期来源" />
         <Stat label="平均机会分" value={summary.avgOpportunity} hint={`当前筛选 ${summary.total} 个词`} />
@@ -190,7 +191,7 @@ export function Dashboard() {
         </div>
       )}
 
-      <form onSubmit={addSeed} className="panel mb-4 grid gap-2 p-3 md:grid-cols-[1fr_180px_180px_auto]">
+      <form onSubmit={addSeed} className="panel mb-4 grid gap-2 p-3 md:grid-cols-[minmax(0,1fr)_160px_160px_auto]">
         <Input value={topic} onChange={(event) => setTopic(event.target.value)} placeholder="种子词，例如 AI coding tools" />
         <select className="h-10 rounded-full border border-border bg-card px-3 text-sm" value={region} onChange={(event) => setRegion(event.target.value)}>
           {meta?.regions.map((item) => (
@@ -214,34 +215,7 @@ export function Dashboard() {
         ))}
       </div>
 
-      <div className="mb-3 grid gap-2 md:grid-cols-5">
-        <select className="h-10 rounded-full border border-border bg-card px-3 text-sm" value={filters.window} onChange={(event) => setFilters({ ...filters, window: event.target.value })}>
-          <option value="24h">近 24 小时</option>
-          <option value="7d">近 7 天</option>
-          <option value="30d">近 30 天</option>
-          <option value="all">全部时间</option>
-        </select>
-        <select className="h-10 rounded-full border border-border bg-card px-3 text-sm" value={filters.stage} onChange={(event) => setFilters({ ...filters, stage: event.target.value })}>
-          <option value="">全部阶段</option>
-          {meta?.stages.map((stage) => (
-            <option key={stage.id} value={stage.id}>{stage.label}</option>
-          ))}
-        </select>
-        <select className="h-10 rounded-full border border-border bg-card px-3 text-sm" value={filters.industry} onChange={(event) => setFilters({ ...filters, industry: event.target.value })}>
-          <option value="">全部行业</option>
-          <option value="none">未分类</option>
-          {meta?.industries.map((item) => (
-            <option key={item.slug} value={item.slug}>{item.nameZh}</option>
-          ))}
-        </select>
-        <select className="h-10 rounded-full border border-border bg-card px-3 text-sm" value={filters.source} onChange={(event) => setFilters({ ...filters, source: event.target.value })}>
-          <option value="">全部来源</option>
-          {meta?.sources.filter((source) => source.id !== "google").map((source) => (
-            <option key={source.id} value={source.id}>{source.nameZh}</option>
-          ))}
-        </select>
-        <Input value={filters.q} onChange={(event) => setFilters({ ...filters, q: event.target.value })} placeholder="筛选关键词" />
-      </div>
+      <FilterBar meta={meta} filters={filters} setFilters={setFilters} open={filtersOpen} setOpen={setFiltersOpen} />
 
       {!items.length && (
         <div className="panel px-5 py-12 text-center">
@@ -307,11 +281,11 @@ function KeywordBody({ item, index }: { item: Keyword; index: number }) {
   return (
     <div>
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-xs text-muted">#{index + 1} · {item.intentLabel}</div>
-          <div className="mt-1 font-medium">{item.term}</div>
+        <div className="min-w-0">
+          <div className="text-xs text-muted">#{index + 1} · {item.intentLabel} · {ago(item.firstSeen)}</div>
+          <div className="mt-1 break-words font-medium">{item.term}</div>
         </div>
-        <div className="display text-2xl">{item.opportunity}</div>
+        <div className="display shrink-0 text-2xl">{item.opportunity}</div>
       </div>
       <div className="mt-2 flex flex-wrap gap-1">
         <span className={`rounded-full border px-2 py-0.5 text-xs ${STAGE_CLASS[item.stage]}`}>{item.stageLabel}</span>
@@ -324,11 +298,91 @@ function KeywordBody({ item, index }: { item: Keyword; index: number }) {
   );
 }
 
+function FilterBar({
+  meta,
+  filters,
+  setFilters,
+  open,
+  setOpen,
+}: {
+  meta: Meta | null;
+  filters: { industry: string; source: string; stage: string; window: string; seed: string; q: string };
+  setFilters: (filters: { industry: string; source: string; stage: string; window: string; seed: string; q: string }) => void;
+  open: boolean;
+  setOpen: (open: boolean) => void;
+}) {
+  const active = [filters.stage, filters.industry, filters.source, filters.q, filters.window !== "7d" ? filters.window : ""].filter(Boolean).length;
+  const fields = <FilterFields meta={meta} filters={filters} setFilters={setFilters} />;
+  return (
+    <>
+      <div className="mb-3 md:hidden">
+        <button type="button" className="h-10 w-full rounded-full border border-border bg-card text-sm" onClick={() => setOpen(true)}>
+          筛选{active ? ` · ${active}` : ""}
+        </button>
+      </div>
+      <div className="mb-3 hidden gap-2 md:grid md:grid-cols-5">{fields}</div>
+      {open && (
+        <div className="fixed inset-0 z-50 md:hidden">
+          <button type="button" className="absolute inset-0 bg-[#241c16]/40" aria-label="关闭筛选" onClick={() => setOpen(false)} />
+          <div className="absolute inset-x-0 bottom-0 max-h-[85vh] overflow-y-auto rounded-t-3xl bg-card p-4 pb-28 shadow-xl">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="font-medium">筛选</h2>
+              <button type="button" className="text-sm text-primary" onClick={() => setOpen(false)}>完成</button>
+            </div>
+            <div className="grid gap-2">{fields}</div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function FilterFields({
+  meta,
+  filters,
+  setFilters,
+}: {
+  meta: Meta | null;
+  filters: { industry: string; source: string; stage: string; window: string; seed: string; q: string };
+  setFilters: (filters: { industry: string; source: string; stage: string; window: string; seed: string; q: string }) => void;
+}) {
+  return (
+    <>
+      <select className="h-10 w-full rounded-full border border-border bg-card px-3 text-sm" value={filters.window} onChange={(event) => setFilters({ ...filters, window: event.target.value })}>
+        <option value="24h">近 24 小时</option>
+        <option value="7d">近 7 天</option>
+        <option value="30d">近 30 天</option>
+        <option value="all">全部时间</option>
+      </select>
+      <select className="h-10 w-full rounded-full border border-border bg-card px-3 text-sm" value={filters.stage} onChange={(event) => setFilters({ ...filters, stage: event.target.value })}>
+        <option value="">全部阶段</option>
+        {meta?.stages.map((stage) => (
+          <option key={stage.id} value={stage.id}>{stage.label}</option>
+        ))}
+      </select>
+      <select className="h-10 w-full rounded-full border border-border bg-card px-3 text-sm" value={filters.industry} onChange={(event) => setFilters({ ...filters, industry: event.target.value })}>
+        <option value="">全部行业</option>
+        <option value="none">未分类</option>
+        {meta?.industries.map((item) => (
+          <option key={item.slug} value={item.slug}>{item.nameZh}</option>
+        ))}
+      </select>
+      <select className="h-10 w-full rounded-full border border-border bg-card px-3 text-sm" value={filters.source} onChange={(event) => setFilters({ ...filters, source: event.target.value })}>
+        <option value="">全部来源</option>
+        {meta?.sources.filter((source) => source.id !== "google").map((source) => (
+          <option key={source.id} value={source.id}>{source.nameZh}</option>
+        ))}
+      </select>
+      <Input value={filters.q} onChange={(event) => setFilters({ ...filters, q: event.target.value })} placeholder="筛选关键词" />
+    </>
+  );
+}
+
 function Stat({ label, value, hint }: { label: string; value: number; hint: string }) {
   return (
     <div className="panel px-4 py-3">
       <div className="text-xs text-muted">{label}</div>
-      <div className="display text-3xl">{value}</div>
+      <div className="display text-2xl sm:text-3xl">{value}</div>
       <div className="text-xs text-muted">{hint}</div>
     </div>
   );

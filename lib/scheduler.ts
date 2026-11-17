@@ -7,6 +7,7 @@ const globalStore = globalThis as unknown as { __radarScheduler?: boolean };
 export function startScheduler() {
   if (globalStore.__radarScheduler) return;
   globalStore.__radarScheduler = true;
+  console.log(`[radar] scheduler in process, every ${process.env.CRON_HOURS || 4}h, digest ${process.env.DIGEST_HOUR || 8}:00 ${process.env.DIGEST_TZ || "Asia/Shanghai"}`);
   run("update job_state set running = 0 where id = 1");
   const hours = Number(process.env.CRON_HOURS || 4);
   setTimeout(() => {

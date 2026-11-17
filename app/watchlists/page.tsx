@@ -35,7 +35,7 @@ export default function WatchlistsPage() {
 
   return (
     <Shell>
-      <h1 className="display text-4xl">监控名单</h1>
+      <h1 className="display text-3xl sm:text-4xl">监控名单</h1>
       <p className="mt-2 max-w-2xl text-sm text-muted">X 账号、Reddit 社区和竞品站按行业维护。系统只能建议新增，点「采用」才会进下一轮采集。不会关注任何 X 账号。</p>
       <div className="mt-4 flex gap-2 overflow-x-auto">
         {industries.map((item) => (
@@ -72,7 +72,7 @@ function List({
   return (
     <section className="panel p-4">
       <h2 className="font-medium">{title}</h2>
-      <form className="mt-3 flex gap-2" onSubmit={(event) => { event.preventDefault(); void act({ op: "add", kind, industry, value }); setValue(""); }}>
+      <form className="mt-3 flex flex-col gap-2 sm:flex-row" onSubmit={(event) => { event.preventDefault(); void act({ op: "add", kind, industry, value }); setValue(""); }}>
         <Input value={value} onChange={(event) => setValue(event.target.value)} placeholder={placeholder} />
         <Button type="submit" size="sm">加入</Button>
       </form>

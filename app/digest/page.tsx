@@ -38,7 +38,7 @@ export default function DigestPage() {
     <Shell>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="display text-4xl">日报与回测</h1>
+          <h1 className="display text-3xl sm:text-4xl">日报与回测</h1>
           <p className="mt-2 max-w-2xl text-sm text-muted">
             每天 {schedule.hour}:00（{schedule.timeZone}）生成前 10 个还没被 Google 接住的机会。配了 SMTP、Telegram 或 webhook 就会外发，页面上始终能看。
           </p>

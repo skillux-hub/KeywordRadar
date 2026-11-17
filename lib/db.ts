@@ -293,7 +293,7 @@ function seed(db: DatabaseSync) {
 
 export function getDb() {
   if (!globalStore.__radarDb) {
-    const dir = path.join(process.cwd(), "data");
+    const dir = process.env.DATA_DIR || path.join(process.cwd(), "data");
     fs.mkdirSync(dir, { recursive: true });
     const db = new DatabaseSync(path.join(dir, "radar.db"));
     db.exec("PRAGMA journal_mode = WAL");

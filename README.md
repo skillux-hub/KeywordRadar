@@ -107,16 +107,73 @@ Google 不是发现源。每轮结束时，对分数最高的一批词做两件�
 | `DIGEST_HOUR` `DIGEST_TZ` | 默认 8 点，Asia/Shanghai |
 | `CRON_HOURS` | 采集间隔，默认 4 |
 
+## 访问密码
+
+公网部署前设置 `APP_PASSWORD`。登录后浏览器会留下 14 天的 HttpOnly cookie（`radar_session`）。
+
+本地 `npm run dev` 不设这个变量时不锁，方便自己看。`NODE_ENV=production` 且没设密码时，页面和接口都会拒绝，避免一个空密码的雷达被扫到。
+
+健康检查 `GET /api/health` 不需要密码，给平台探活用。
+
 ## 部署
 
-Docker（数据卷别忘了，不然重启丢快照）：
+这个进程必须一直活着：采集调度和早报都在 `instrumentation.ts` 里随 Node 进程启动，不是独立的 cron 容器。SQLite 在 `DATA_DIR`（容器里是 `/data`），这个目录要挂持久卷，否则重启后快照没了。
+
+不要用会休眠的免费层，也不要用无状态 serverless（Vercel 一类）：机器睡了调度就停，磁盘一换库就丢。
+
+当前环境没有 Fly、Render、Railway 或任何云主机的登录凭证，所以没有替你发布到公网。下面是你可以自己做的三种做法。
+
+### 一台 VPS（Docker）
+
+需要：一台 Linux 虚拟机，装好 Docker，以及你自己的 SSH。把仓库和填好的 `.env`（至少 `APP_PASSWORD`）放上去。
+
+```bash
+docker compose up -d --build
+```
+
+`docker-compose.yml` 会把命名卷 `radar-data` 挂到容器 `/data`。前面再加 Caddy 或 Nginx，把 443 转到 `127.0.0.1:4317`。看健康检查：`curl -fsS http://127.0.0.1:4317/api/health`。
+
+不用 compose 时：
 
 ```bash
 docker build -t seo-radar .
-docker run --env-file .env -p 4317:4317 -v seo-radar-data:/app/data seo-radar
+docker run -d --name seo-radar --restart unless-stopped \
+  --env-file .env -e DATA_DIR=/data -e NODE_ENV=production \
+  -p 4317:4317 -v seo-radar-data:/data seo-radar
 ```
 
-也可以在一台虚拟机上 `npm run build && npm start`，前面加一个反向代理。进程要一直活着，调度才会跑。
+### Fly.io
+
+需要：Fly 账号，以及 `fly auth login` 之后本机的 Fly token。仓库里有 `fly.toml`：单机、不自动关机、卷挂在 `/data`、探活 `/api/health`。
+
+```bash
+fly apps create seo-keyword-radar
+fly volumes create radar_data --region iad --size 1
+fly secrets set APP_PASSWORD='你的密码' NODE_ENV=production
+fly deploy
+```
+
+`app` 名字如果被占用，改 `fly.toml` 里的 `app`，卷名 `radar_data` 要和 `[[mounts]].source` 一致。部署完打开 `https://seo-keyword-radar.fly.dev`（以 Fly 实际给的域名为准）。
+
+### Render
+
+需要：Render 账号。新建 **Web Service**，环境选 Docker，方案用不会休眠的付费实例（免费实例会睡觉，调度会停）。
+
+- Health Check Path：`/api/health`
+- 环境变量：`APP_PASSWORD`、`NODE_ENV=production`、`DATA_DIR=/data`，外加你要用的可选密钥
+- 添加 Disk，挂载路径 `/data`，至少 1 GB
+
+保存后 Render 会给出 `https://<服务名>.onrender.com`。
+
+### Railway
+
+需要：Railway 账号。从仓库部署 Dockerfile。
+
+- 变量：`APP_PASSWORD`、`NODE_ENV=production`、`DATA_DIR=/data`
+- 给服务加 Volume，挂载路径 `/data`
+- 生成公网域名。Railway 的 Web 服务默认不休眠，保持这一台一直开着。
+
+三种都能用同一份镜像。密码、数据和调度都在这一台进程里，不要再水平扩成多副本，SQLite 不适合多写。
 
 ## 限制
 

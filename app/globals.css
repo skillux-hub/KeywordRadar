@@ -32,6 +32,7 @@
 * { box-sizing: border-box; }
 
 html, body { min-height: 100%; }
+body { overflow-x: clip; }
 
 body {
   margin: 0;

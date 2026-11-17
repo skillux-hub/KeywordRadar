@@ -29,10 +29,10 @@ export default function FeedsPage() {
     <Shell>
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="display text-4xl">行业动态</h1>
+          <h1 className="display text-3xl sm:text-4xl">行业动态</h1>
           <p className="mt-2 text-sm text-muted">Reddit 新帖、X 大V时间线、竞品 sitemap 新 URL。按行业看，不按关键词打散。</p>
         </div>
-        <select className="h-10 rounded-full border border-border bg-card px-3 text-sm" value={industry} onChange={(event) => setIndustry(event.target.value)}>
+        <select className="h-10 w-full rounded-full border border-border bg-card px-3 text-sm sm:w-auto" value={industry} onChange={(event) => setIndustry(event.target.value)}>
           <option value="">全部行业</option>
           {meta?.industries.map((item) => <option key={item.slug} value={item.slug}>{item.nameZh}</option>)}
         </select>
@@ -55,7 +55,7 @@ function Column({ title, items, empty }: { title: string; items: Item[]; empty: 
         {items.slice(0, 12).map((item, index) => (
           <li key={`${item.url}-${index}`} className="text-sm">
             <div className="text-xs text-muted">{item.author} · {ago(item.published_at)}{item.velocity ? ` · 热度 ${item.velocity.toFixed(1)}/时` : ""}</div>
-            {item.url ? <a className="text-primary" href={item.url} target="_blank" rel="noreferrer">{item.title || item.text}</a> : <span>{item.title}</span>}
+            {item.url ? <a className="break-words text-primary" href={item.url} target="_blank" rel="noreferrer">{item.title || item.text}</a> : <span className="break-words">{item.title}</span>}
           </li>
         ))}
       </ul>

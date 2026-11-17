@@ -1,8 +1,11 @@
+import { guard } from "@/lib/auth";
 import { all } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
 export function GET(request: Request) {
+  const denied = guard(request);
+  if (denied) return denied;
   const industry = new URL(request.url).searchParams.get("industry") || "";
   const where = industry ? "where industry = ?" : "";
   const params = industry ? [industry] : [];

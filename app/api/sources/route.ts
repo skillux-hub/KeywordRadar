@@ -1,8 +1,11 @@
+import { guard } from "@/lib/auth";
 import { all } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-export function GET() {
+export function GET(request: Request) {
+  const denied = guard(request);
+  if (denied) return denied;
   const rows = all<{ source: string; name_zh: string; role: string; status: string; message: string | null; last_run_at: string | null; item_count: number; keys_hint: string | null }>(
     "select source, name_zh, role, status, message, last_run_at, item_count, keys_hint from source_status order by role, source",
   );

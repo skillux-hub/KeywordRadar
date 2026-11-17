@@ -1,8 +1,11 @@
+import { guard } from "@/lib/auth";
 import { listKeywords } from "@/lib/read";
 
 export const dynamic = "force-dynamic";
 
 export function GET(request: Request) {
+  const denied = guard(request);
+  if (denied) return denied;
   const url = new URL(request.url);
   const { items } = listKeywords({
     industry: url.searchParams.get("industry") || undefined,

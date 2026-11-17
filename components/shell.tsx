@@ -1,40 +1,69 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const LINKS = [
   { href: "/", label: "雷达" },
-  { href: "/feeds", label: "行业动态" },
-  { href: "/watchlists", label: "监控名单" },
-  { href: "/sources", label: "数据源" },
-  { href: "/digest", label: "日报与回测" },
+  { href: "/feeds", label: "动态" },
+  { href: "/watchlists", label: "名单" },
+  { href: "/sources", label: "来源" },
+  { href: "/digest", label: "日报" },
 ];
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const [canLogout, setCanLogout] = useState(false);
+
+  useEffect(() => {
+    void fetch("/api/login")
+      .then((res) => res.json())
+      .then((data) => setCanLogout(Boolean(data.configured)))
+      .catch(() => undefined);
+    void fetch("/api/status").then((res) => {
+      if (res.status === 401 || res.status === 503) window.location.href = "/login";
+    });
+  }, []);
+
+  async function logout() {
+    await fetch("/api/logout", { method: "POST" });
+    window.location.href = "/login";
+  }
+
   return (
     <div className="min-h-screen md:grid md:grid-cols-[228px_1fr]">
-      <aside className="bg-ink text-[#f6efe4] md:min-h-screen">
-        <div className="flex items-center gap-3 px-4 py-4 md:px-5 md:py-6">
-          <RadarMark />
-          <div>
-            <div className="display text-xl leading-none">新词雷达</div>
-            <div className="mt-1 text-[11px] tracking-wide text-[#d9cbb8]">英语市场 · 早于 Google</div>
+      <aside className="sticky top-0 z-20 bg-ink text-[#f6efe4] md:static md:min-h-screen">
+        <div className="flex items-center justify-between gap-3 px-4 py-3 md:block md:px-5 md:py-6">
+          <div className="flex items-center gap-3">
+            <RadarMark />
+            <div>
+              <div className="display text-xl leading-none">新词雷达</div>
+              <div className="mt-1 text-[11px] tracking-wide text-[#d9cbb8]">英语市场 · 早于 Google</div>
+            </div>
           </div>
+          {canLogout && (
+            <button className="text-xs text-[#d9cbb8] md:mt-4 md:block" onClick={() => void logout()}>
+              退出
+            </button>
+          )}
         </div>
-        <nav className="flex gap-1 overflow-x-auto px-3 pb-3 md:block md:space-y-1 md:px-3">
-          {LINKS.map((link) => {
-            const active = pathname === link.href;
-            return (
-              <Link key={link.href} href={link.href} data-active={active} className="nav-link shrink-0">
-                {link.label}
-              </Link>
-            );
-          })}
+        <nav className="hidden px-3 pb-6 md:block md:space-y-1">
+          {LINKS.map((link) => (
+            <Link key={link.href} href={link.href} data-active={pathname === link.href} className="nav-link">
+              {link.label === "动态" ? "行业动态" : link.label === "名单" ? "监控名单" : link.label === "来源" ? "数据源" : link.label === "日报" ? "日报与回测" : link.label}
+            </Link>
+          ))}
         </nav>
       </aside>
-      <main className="px-4 py-5 md:px-8 md:py-7">{children}</main>
+      <main className="min-w-0 px-4 py-4 pb-24 md:px-8 md:py-7 md:pb-7">{children}</main>
+      <nav className="fixed inset-x-0 bottom-0 z-30 flex border-t border-[#3a2e26] bg-ink px-1 pb-[env(safe-area-inset-bottom)] text-[#f6efe4] md:hidden">
+        {LINKS.map((link) => (
+          <Link key={link.href} href={link.href} data-active={pathname === link.href} className="nav-link flex-1 justify-center px-1 py-3 text-xs">
+            {link.label}
+          </Link>
+        ))}
+      </nav>
     </div>
   );
 }

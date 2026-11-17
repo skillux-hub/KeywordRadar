@@ -1,13 +1,18 @@
+import { guard } from "@/lib/auth";
 import { all, get, run } from "@/lib/db";
 import { REGIONS } from "@/lib/catalog";
 
 export const dynamic = "force-dynamic";
 
-export function GET() {
+export function GET(request: Request) {
+  const denied = guard(request);
+  if (denied) return denied;
   return Response.json({ seeds: all("select id, topic, region, industry, active, created_at from seeds where active = 1 order by id desc") });
 }
 
 export async function POST(request: Request) {
+  const denied = guard(request);
+  if (denied) return denied;
   const body = (await request.json()) as { topic?: string; region?: string; industry?: string };
   const topic = (body.topic || "").trim();
   const region = REGIONS.some((item) => item.id === body.region) ? body.region! : "US";
@@ -23,6 +28,8 @@ export async function POST(request: Request) {
 }
 
 export function DELETE(request: Request) {
+  const denied = guard(request);
+  if (denied) return denied;
   const id = Number(new URL(request.url).searchParams.get("id"));
   if (!id) return Response.json({ error: "缺少 id" }, { status: 400 });
   run("update seeds set active = 0 where id = ?", id);

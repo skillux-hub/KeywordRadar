@@ -1,10 +1,13 @@
+import { guard } from "@/lib/auth";
 import { hostnameOf } from "@/lib/utils";
 import { INDUSTRIES } from "@/lib/catalog";
 import { all, get, run } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-export function GET() {
+export function GET(request: Request) {
+  const denied = guard(request);
+  if (denied) return denied;
   return Response.json({
     industries: INDUSTRIES,
     x: all("select id, industry, handle, display_name, status, origin, reason from x_accounts order by industry, status, handle"),
@@ -18,6 +21,8 @@ export function GET() {
 }
 
 export async function POST(request: Request) {
+  const denied = guard(request);
+  if (denied) return denied;
   const body = (await request.json()) as { op?: string; kind?: string; industry?: string; value?: string; id?: number; name?: string };
   const op = body.op;
   const industry = body.industry || "";
