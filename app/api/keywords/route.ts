@@ -14,6 +14,7 @@ export function GET(request: Request) {
     window: url.searchParams.get("window") || "7d",
     seed: url.searchParams.get("seed") || undefined,
     q: url.searchParams.get("q") || undefined,
+    shape: url.searchParams.get("shape") || undefined,
   });
   return Response.json(data);
 }

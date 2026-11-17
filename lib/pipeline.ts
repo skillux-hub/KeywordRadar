@@ -2,6 +2,7 @@ import { all, get, run } from "./db";
 import { normalize } from "./extract";
 import { classifyIndustries } from "./extract";
 import { analyzeTop } from "./analyze";
+import { refreshDemandKeywords, reviewMatureTerms, scoreUnjudgedNames } from "./enrich";
 import { saveDigest } from "./digest";
 import { scoreAll, tuneWeights } from "./score";
 import { validateGoogle } from "./collectors/google";
@@ -303,7 +304,18 @@ export async function refreshAll(trigger: string) {
   scoreAll();
   done += 1;
   run("update job_state set phase = ?, done = ? where id = 1", "机会分析", done);
+  try {
+    await scoreUnjudgedNames();
+  } catch {
+    /* 专名判断失败不能挡住这一轮 */
+  }
   await analyzeTop();
+  try {
+    await refreshDemandKeywords();
+    await reviewMatureTerms();
+  } catch {
+    /* 需求词和趋势复核都是可选增强 */
+  }
   scoreAll();
   const tuning = tuneWeights();
   await saveDigest("collect", false);

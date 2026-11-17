@@ -244,11 +244,57 @@ function migrate(db: DatabaseSync) {
       key TEXT PRIMARY KEY,
       value TEXT
     );
+    CREATE TABLE IF NOT EXISTS demand_keywords (
+      id INTEGER PRIMARY KEY,
+      term_id INTEGER NOT NULL,
+      keyword TEXT NOT NULL,
+      decision TEXT NOT NULL,
+      volume REAL,
+      trend TEXT,
+      note TEXT,
+      updated_at TEXT NOT NULL,
+      UNIQUE(term_id, keyword)
+    );
+    CREATE TABLE IF NOT EXISTS repo_snapshots (
+      id INTEGER PRIMARY KEY,
+      full_name TEXT NOT NULL,
+      stars INTEGER NOT NULL,
+      created_at TEXT,
+      collected_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS repo_breakouts (
+      full_name TEXT PRIMARY KEY,
+      first_breakout_at TEXT NOT NULL,
+      stars INTEGER,
+      reason TEXT
+    );
+    CREATE TABLE IF NOT EXISTS trends_reviews (
+      term_id INTEGER PRIMARY KEY,
+      source TEXT,
+      reviewed_at TEXT NOT NULL,
+      hit INTEGER NOT NULL,
+      lead_days REAL,
+      baseline REAL,
+      peak REAL,
+      note TEXT
+    );
     CREATE INDEX IF NOT EXISTS idx_obs_term ON term_observations(term_id, collected_at);
     CREATE INDEX IF NOT EXISTS idx_evi_term ON term_evidence(term_id, source);
     CREATE INDEX IF NOT EXISTS idx_feed_industry ON feed_items(industry, source, fetched_at);
   `);
   db.prepare("INSERT OR IGNORE INTO job_state (id, running) VALUES (1, 0)").run();
+  ensureColumn(db, "terms", "name_score", "REAL");
+  ensureColumn(db, "term_analysis", "serp_shape", "TEXT");
+  ensureColumn(db, "term_analysis", "platform_share", "REAL");
+  ensureColumn(db, "term_analysis", "young_loosened", "INTEGER");
+  ensureColumn(db, "term_analysis", "kgr", "REAL");
+  ensureColumn(db, "term_analysis", "ads_present", "INTEGER");
+  ensureColumn(db, "term_analysis", "page_mix_json", "TEXT");
+}
+
+function ensureColumn(db: DatabaseSync, table: string, column: string, type: string) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (!columns.some((item) => item.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
 }
 
 function seed(db: DatabaseSync) {

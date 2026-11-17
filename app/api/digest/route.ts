@@ -1,5 +1,6 @@
 import { guard } from "@/lib/auth";
 import { latestDigest, saveDigest } from "@/lib/digest";
+import { trendReviewSummary } from "@/lib/enrich";
 import { readWeights } from "@/lib/score";
 import { all, num } from "@/lib/db";
 
@@ -23,7 +24,7 @@ export function GET(request: Request) {
           delivery: row.delivery_json ? JSON.parse(row.delivery_json) : null,
         }
       : null,
-    backtest: { samples: backtest.length, avgLeadHours: avg, weights: readWeights() },
+    backtest: { samples: backtest.length, avgLeadHours: avg, weights: readWeights(), trendReview: trendReviewSummary() },
     schedule: { hour: Number(process.env.DIGEST_HOUR || 8), timeZone: process.env.DIGEST_TZ || "Asia/Shanghai" },
   });
 }

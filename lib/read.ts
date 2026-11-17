@@ -9,6 +9,7 @@ export type Filters = {
   window?: string;
   seed?: string;
   q?: string;
+  shape?: string;
 };
 
 function cutoff(window: string | undefined) {
@@ -47,6 +48,10 @@ export function listKeywords(filters: Filters) {
       sql += ` and exists (select 1 from term_seeds ts where ts.term_id = t.id and ts.seed_id in (${ids.map(() => "?").join(",")}))`;
       params.push(...ids);
     }
+  }
+  if (filters.shape) {
+    sql += " and exists (select 1 from term_analysis a where a.term_id = t.id and a.serp_shape = ?)";
+    params.push(filters.shape);
   }
   if (filters.q) {
     sql += " and (t.normalized like ? or t.display like ?)";
@@ -95,6 +100,8 @@ function presentTerm(row: Record<string, unknown>) {
     leadHours: row.lead_hours == null ? null : num(row.lead_hours),
     googleAtDiscovery: num(row.google_at_discovery) === 1,
     spark: row.spark_json ? (JSON.parse(String(row.spark_json)) as number[]) : [],
+    nameScore: row.name_score == null ? null : num(row.name_score),
+    serpShape: get<{ serp_shape: string | null }>("select serp_shape from term_analysis where term_id = ?", id)?.serp_shape ?? "",
   };
 }
 
@@ -155,11 +162,28 @@ export function keywordDetail(id: number) {
           lifecycleNote: String(analysis.lifecycle_note || ""),
           commercialScore: analysis.commercial_score == null ? null : num(analysis.commercial_score),
           commercialNote: String(analysis.commercial_note || ""),
+          serpShape: analysis.serp_shape ? String(analysis.serp_shape) : "",
+          platformShare: analysis.platform_share == null ? null : num(analysis.platform_share),
+          youngLoosened: num(analysis.young_loosened) === 1,
+          kgr: analysis.kgr == null ? null : num(analysis.kgr),
+          adsPresent: analysis.ads_present == null ? null : num(analysis.ads_present) === 1,
+          pageMix: (() => {
+            if (!analysis.page_mix_json) return {};
+            try {
+              return JSON.parse(String(analysis.page_mix_json)) as Record<string, number>;
+            } catch {
+              return {};
+            }
+          })(),
           outline,
           outlineMethod: String(analysis.outline_method || "heuristic"),
         }
       : null,
     weights: readWeights(),
+    demands: all<{ keyword: string; decision: string; volume: number | null; trend: string | null; note: string | null }>(
+      "select keyword, decision, volume, trend, note from demand_keywords where term_id = ? order by case decision when '优先' then 0 when '观察' then 1 else 2 end, keyword",
+      id,
+    ),
   };
 }
 

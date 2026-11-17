@@ -2,6 +2,7 @@ import nodemailer from "nodemailer";
 import { SOURCE_LABEL, stageMeta } from "./catalog";
 import { all, get, run } from "./db";
 import { fetchText } from "./http";
+import { trendReviewSummary } from "./enrich";
 import { readWeights } from "./score";
 import { zonedNow } from "./utils";
 
@@ -14,6 +15,7 @@ type DigestItem = {
   summary: string;
   sources: string[];
   firstSeen: string;
+  demands: { keyword: string; decision: string }[];
 };
 
 export function buildDigestItems(): DigestItem[] {
@@ -47,6 +49,10 @@ export function buildDigestItems(): DigestItem[] {
     summary: row.summary ?? "",
     sources: all<{ source: string }>("select source from term_sources where term_id = ?", row.id).map((item) => SOURCE_LABEL[item.source] ?? item.source),
     firstSeen: row.first_seen_at,
+    demands: all<{ keyword: string; decision: string }>(
+      "select keyword, decision from demand_keywords where term_id = ? and decision != '跳过' order by case decision when '优先' then 0 else 1 end limit 5",
+      row.id,
+    ),
   }));
 }
 
@@ -68,6 +74,8 @@ export async function saveDigest(trigger: "collect" | "schedule" | "manual", del
     createdAt: new Date().toISOString(),
     items,
     backtest: { samples: backtest.length, avgLeadHours: avg, weights: readWeights() },
+    trendReview: trendReviewSummary(),
+    demands: items.flatMap((item) => item.demands.map((demand) => ({ term: item.term, ...demand }))),
   };
   const delivery = deliver ? await deliverDigest(payload) : { skipped: true, reason: trigger === "collect" ? "采集快照会存档，定时或手动发送才外发" : "未发送" };
   const inserted = run(
@@ -87,6 +95,7 @@ function digestText(payload: { title: string; items: DigestItem[]; backtest: { s
     lines.push(`${index + 1}. ${item.term}  ·  ${item.stageLabel}  ·  机会分 ${item.opportunity}`);
     lines.push(`   ${item.summary}`);
     lines.push(`   来源：${item.sources.join("、") || "—"}`);
+    if (item.demands.length) lines.push(`   通用需求词：${item.demands.map((demand) => `${demand.keyword}（${demand.decision}）`).join("、")}`);
   });
   lines.push("");
   lines.push(

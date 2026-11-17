@@ -1,3 +1,4 @@
+import { properNounCandidates } from "./signals/names";
 import { decodeHtml } from "./xml";
 
 export type Intent = "informational" | "commercial" | "comparison" | "navigational" | "unknown";
@@ -221,6 +222,7 @@ export function phrasesFromText(input: { title?: string; body?: string; productN
     if (!shaped || HEAD_SINGLE.has(lower) || GENERIC.has(lower) || isNoiseTerm(lower)) continue;
     pushPhrase(phrases, raw, raw, "hashtag", true);
   }
+  for (const name of properNounCandidates(blob)) pushPhrase(phrases, name, name, "product", true);
   for (const match of blob.matchAll(/\b((?:[A-Z][a-z]+){2,}[A-Za-z0-9]*)\b/g)) {
     pushPhrase(phrases, match[1], contentWords(match[1]).join(" ") || match[1], "product", true);
   }

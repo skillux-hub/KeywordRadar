@@ -48,7 +48,8 @@ export function scoreAll() {
     first_seen_at: string;
     on_suggest: number;
     on_trends: number;
-  }>("select id, display, first_seen_at, on_suggest, on_trends from terms");
+    name_score: number | null;
+  }>("select id, display, first_seen_at, on_suggest, on_trends, name_score from terms");
   run("delete from term_sources");
   run("delete from term_industries");
   run("delete from term_seeds");
@@ -101,6 +102,11 @@ export function scoreAll() {
     if (sites.length >= 2) discovery += Math.min(14, (sites.length - 1) * 5);
     const peakMentions = Math.max(...obs.map((row) => num(row.count)));
     const strongEvidence = sources.length >= 2 || peakMentions >= 2;
+    if (term.name_score != null && term.name_score < 0.15 && !strongEvidence) {
+      dropTerm(term.id);
+      continue;
+    }
+    if (term.name_score != null && term.name_score < 0.35) discovery *= 0.55;
     if (!strongEvidence) discovery *= 0.38;
     else if (sources.length >= 2) discovery += 8;
     if (onGoogle) discovery *= 0.52;
@@ -172,6 +178,8 @@ function dropTerm(id: number) {
   run("delete from term_sources where term_id = ?", id);
   run("delete from term_industries where term_id = ?", id);
   run("delete from term_seeds where term_id = ?", id);
+  run("delete from demand_keywords where term_id = ?", id);
+  run("delete from trends_reviews where term_id = ?", id);
   run("delete from terms where id = ?", id);
 }
 
@@ -198,15 +206,17 @@ export function tuneWeights() {
   const rows = all<{ lead_hours: number }>(
     "select lead_hours from terms where lead_hours is not null and ifnull(google_at_discovery, 0) = 0 and lead_hours > 0",
   );
-  if (rows.length < 5) return { samples: rows.length, tuned: false, avg: null as number | null };
-  const avg = rows.reduce((sum, row) => sum + num(row.lead_hours), 0) / rows.length;
+  const reviewLeads = all<{ lead_days: number }>("select lead_days from trends_reviews where hit = 1 and lead_days is not null").map((row) => num(row.lead_days) * 24);
+  const samples = [...rows.map((row) => num(row.lead_hours)), ...reviewLeads];
+  if (samples.length < 5) return { samples: samples.length, tuned: false, avg: null as number | null };
+  const avg = samples.reduce((sum, value) => sum + value, 0) / samples.length;
   const today = new Date().toISOString().slice(0, 10);
   const last = get<{ value: string }>("select value from meta where key = 'weights_tuned_on'");
-  if (last?.value === today) return { samples: rows.length, tuned: false, avg };
+  if (last?.value === today) return { samples: samples.length, tuned: false, avg };
   let bonus = readWeights().earlyBonus;
   if (avg < 24) bonus = Math.min(20, bonus + 1);
   if (avg > 168) bonus = Math.max(4, bonus - 1);
   run("insert into meta (key, value) values ('early_bonus', ?) on conflict(key) do update set value = excluded.value", String(bonus));
   run("insert into meta (key, value) values ('weights_tuned_on', ?) on conflict(key) do update set value = excluded.value", today);
-  return { samples: rows.length, tuned: true, avg, bonus };
+  return { samples: samples.length, tuned: true, avg, bonus };
 }

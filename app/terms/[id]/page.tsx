@@ -23,6 +23,8 @@ type Detail = {
   sourceLabels: string[];
   industryLabels: string[];
   spark: number[];
+  nameScore: number | null;
+  demands: { keyword: string; decision: string; volume: number | null; trend: string | null; note: string | null }[];
   onSuggest: boolean;
   onTrends: boolean;
   leadHours: number | null;
@@ -34,7 +36,8 @@ type Detail = {
     competitionLabel: string;
     competitionScore: number | null;
     competitionNote: string;
-    serp: { url: string; domain: string; kind: string }[];
+    serp: { url: string; domain: string; kind: string; pageKind?: string; homepage?: boolean }[];
+    pageMix?: Record<string, number>;
     domain: string;
     domainStatus: string;
     landScore: number | null;
@@ -44,10 +47,17 @@ type Detail = {
     lifecycleNote: string;
     commercialScore: number | null;
     commercialNote: string;
+    serpShape: string;
+    platformShare: number | null;
+    youngLoosened: boolean;
+    kgr: number | null;
+    adsPresent: boolean | null;
     outline: { titles?: string[]; sections?: { heading: string; points: string[] }[]; related?: string[]; questions?: string[] } | null;
     outlineMethod: string;
   };
 };
+
+const PAGE_KIND: Record<string, string> = { tool: "工具", list: "清单", article: "文章", video: "视频", forum: "论坛", official: "官网" };
 
 const TABS = [
   { id: "quotes", label: "摘录" },
@@ -105,6 +115,7 @@ export default function TermPage({ params }: { params: Promise<{ id: string }> }
                   <span>· {ago(data.firstSeen)}</span>
                 </div>
                 <h1 className="mt-3 break-words text-2xl font-semibold tracking-tight sm:text-4xl">{data.term}</h1>
+                {data.nameScore != null && <p className="mt-1 text-xs text-faint">专名判断 {Math.round(data.nameScore * 100)} / 100</p>}
                 <p className="mt-3 max-w-3xl break-words text-sm leading-6 text-muted">{data.summary}</p>
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   {data.sources.map((source, index) => (
@@ -128,8 +139,21 @@ export default function TermPage({ params }: { params: Promise<{ id: string }> }
 
           <section className="grid gap-3 md:grid-cols-3">
             <Info title="Google" body={data.onSuggest ? "自动补全已经会写出这个词。" : "自动补全还没跟上。"} extra={data.onTrends ? "每日趋势里也出现了。" : data.googleAtDiscovery ? "第一次看见时 Google 就已经知道。" : data.leadHours ? `领先约 ${data.leadHours.toFixed(1)} 小时。` : "还在窗口里。"} />
-            <Info title="竞争" body={data.analysis?.competitionLabel || "未检测"} extra={data.analysis?.competitionNote || "这一轮还没拉 SERP。"} />
+            <Info title="竞争" body={`${data.analysis?.competitionLabel || "未检测"}${data.analysis?.serpShape ? ` · ${data.analysis.serpShape}` : ""}`} extra={`${data.analysis?.competitionNote || "这一轮还没拉 SERP。"}${data.analysis?.youngLoosened ? " 年轻词已放宽一档。" : ""}${data.analysis?.kgr != null ? ` KGR ${data.analysis.kgr}。` : ""}${data.analysis?.adsPresent == null ? "" : data.analysis.adsPresent ? " 有广告。" : " 无广告。"}`} />
             <Info title="域名窗口" body={domainLabel(data.analysis?.domainStatus || "unknown")} extra={`${data.analysis?.domain || "未检查"}。${data.analysis?.landNote || ""} ${data.analysis?.lifecycle || "观察中"}。`} />
+          </section>
+
+          <section className="panel p-4 sm:p-5">
+            <h2 className="text-sm font-semibold">通用需求词</h2>
+            {!data.demands?.length && <p className="mt-2 text-sm text-muted">还没有从专名推出的通用搜索词。有 OPENAI_API_KEY 时会多给一批候选；没有 DataForSEO 时不看搜索量，决定会停在观察或跳过。</p>}
+            <ul className="mt-3 space-y-2">
+              {data.demands?.map((item) => (
+                <li key={item.keyword} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                  <span className="font-medium">{item.keyword}</span>
+                  <span className="text-xs text-muted">{item.decision}{item.volume != null ? ` · 月搜索 ${item.volume}` : ""}{item.trend && item.trend !== "unknown" ? ` · 趋势 ${item.trend}` : ""}</span>
+                </li>
+              ))}
+            </ul>
           </section>
 
           <section className="panel overflow-hidden">
@@ -161,15 +185,23 @@ export default function TermPage({ params }: { params: Promise<{ id: string }> }
                 </ul>
               )}
               {tab === "serp" && (
-                <ul className="space-y-2 text-sm">
-                  {!data.analysis?.serp?.length && <li className="text-muted">{data.analysis?.competitionNote || "还没有搜索结果。"}</li>}
-                  {data.analysis?.serp?.map((row) => (
-                    <li key={row.url} className="flex items-start justify-between gap-3">
-                      <a className="break-all text-primary hover:underline" href={row.url} target="_blank" rel="noreferrer">{row.domain || row.url}</a>
-                      <span className="shrink-0 text-xs text-faint">{row.kind}</span>
-                    </li>
-                  ))}
-                </ul>
+                <div className="space-y-3 text-sm">
+                  {!!data.analysis?.pageMix && !!Object.keys(data.analysis.pageMix).length && (
+                    <p className="text-xs text-muted">
+                      页面类型：{Object.entries(data.analysis.pageMix).map(([kind, count]) => `${PAGE_KIND[kind] || kind} ${count}`).join(" · ")}
+                      {data.analysis.platformShare != null ? ` · 平台占比 ${Math.round(data.analysis.platformShare * 100)}%` : ""}
+                    </p>
+                  )}
+                  <ul className="space-y-2">
+                    {!data.analysis?.serp?.length && <li className="text-muted">{data.analysis?.competitionNote || "还没有搜索结果。"}</li>}
+                    {data.analysis?.serp?.map((row) => (
+                      <li key={row.url} className="flex items-start justify-between gap-3">
+                        <a className="break-all text-primary hover:underline" href={row.url} target="_blank" rel="noreferrer">{row.domain || row.url}</a>
+                        <span className="shrink-0 text-xs text-faint">{PAGE_KIND[row.pageKind || ""] || row.kind} · {row.homepage ? "首页" : "内页"}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               )}
               {tab === "outline" && <Outline data={data.analysis} />}
             </div>

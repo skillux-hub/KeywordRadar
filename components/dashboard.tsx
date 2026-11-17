@@ -32,6 +32,8 @@ type Keyword = {
   sourceLabels: string[];
   industryLabels: string[];
   spark: number[];
+  nameScore: number | null;
+  serpShape: string;
 };
 
 type Kpis = {
@@ -56,7 +58,7 @@ type Status = {
   kpis?: Kpis;
 };
 
-type Filters = { industry: string; source: string; stage: string; window: string; seed: string; q: string };
+type Filters = { industry: string; source: string; stage: string; window: string; seed: string; q: string; shape: string };
 
 export function Dashboard() {
   const [meta, setMeta] = useState<Meta | null>(null);
@@ -69,7 +71,7 @@ export function Dashboard() {
   const [picked, setPicked] = useState<number[]>([]);
   const [seedReady, setSeedReady] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [filters, setFilters] = useState<Filters>({ industry: "", source: "", stage: "", window: "7d", seed: "", q: "" });
+  const [filters, setFilters] = useState<Filters>({ industry: "", source: "", stage: "", window: "7d", seed: "", q: "", shape: "" });
   const seenSeeds = useRef<number[]>([]);
 
   useEffect(() => {
@@ -176,7 +178,7 @@ export function Dashboard() {
   }
 
   const kpis = status?.kpis;
-  const activeFilters = [filters.stage, filters.industry, filters.source, filters.q, filters.window !== "7d" ? filters.window : ""].filter(Boolean).length;
+  const activeFilters = [filters.stage, filters.industry, filters.source, filters.q, filters.shape, filters.window !== "7d" ? filters.window : ""].filter(Boolean).length;
 
   return (
     <Shell>
@@ -228,7 +230,7 @@ export function Dashboard() {
       <div className="mb-3 md:hidden">
         <button type="button" className="field text-left" onClick={() => setFiltersOpen(true)}>筛选{activeFilters ? ` · ${activeFilters}` : ""}</button>
       </div>
-      <div className="mb-3 hidden gap-2 md:grid md:grid-cols-5">
+      <div className="mb-3 hidden gap-2 md:grid md:grid-cols-3 xl:grid-cols-6">
         <FilterFields meta={meta} filters={filters} setFilters={setFilters} />
       </div>
       {filtersOpen && (
@@ -258,7 +260,7 @@ export function Dashboard() {
           <Link key={item.id} href={`/terms/${item.id}`} className="panel block p-3.5 transition hover:border-primary/40">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <div className="text-[11px] text-faint">#{index + 1} · {item.intentLabel} · {ago(item.firstSeen)}</div>
+                <div className="text-[11px] text-faint">#{index + 1} · {item.intentLabel} · {ago(item.firstSeen)}{item.nameScore != null ? ` · 专名 ${Math.round(item.nameScore * 100)}` : ""}{item.serpShape ? ` · ${item.serpShape}` : ""}</div>
                 <div className="mt-0.5 break-words text-[15px] font-medium">{item.term}</div>
               </div>
               <Score value={item.opportunity} />
@@ -295,7 +297,7 @@ export function Dashboard() {
                     <td className="border-b border-border px-4 py-3 text-faint">{index + 1}</td>
                     <td className="border-b border-border px-3 py-3">
                       <Link href={`/terms/${item.id}`} className="font-medium hover:text-primary">{item.term}</Link>
-                      <div className="mt-0.5 text-xs text-faint">{item.intentLabel} · {item.industryLabels.join(" / ") || "未分类"}</div>
+                      <div className="mt-0.5 text-xs text-faint">{item.intentLabel} · {item.industryLabels.join(" / ") || "未分类"}{item.nameScore != null ? ` · 专名 ${Math.round(item.nameScore * 100)}` : ""}{item.serpShape ? ` · ${item.serpShape}` : ""}</div>
                     </td>
                     <td className="border-b border-border px-3 py-3"><span className={`stage stage-${item.stage}`}>{item.stageLabel}</span></td>
                     <td className="border-b border-border px-3 py-3"><Score value={item.opportunity} /></td>
@@ -357,6 +359,12 @@ function FilterFields({ meta, filters, setFilters }: { meta: Meta | null; filter
         <option value="">全部行业</option>
         <option value="none">未分类</option>
         {meta?.industries.map((item) => <option key={item.slug} value={item.slug}>{item.nameZh}</option>)}
+      </select>
+      <select className="field" value={filters.shape} onChange={(event) => setFilters({ ...filters, shape: event.target.value })}>
+        <option value="">全部 SERP 形态</option>
+        <option value="平台占据">平台占据</option>
+        <option value="可超越">可超越</option>
+        <option value="有争夺">有争夺</option>
       </select>
       <select className="field" value={filters.source} onChange={(event) => setFilters({ ...filters, source: event.target.value })}>
         <option value="">全部来源</option>

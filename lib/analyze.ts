@@ -2,6 +2,8 @@ import { INTENT_LABEL } from "./catalog";
 import { all, get, run } from "./db";
 import { commercialScore } from "./score";
 import { fetchJson, fetchText } from "./http";
+import { classifyResultPage, deriveSerpShape, kgr, loosenCompetition } from "./signals/serp";
+import { dataForSeoEnabled, monthlySearchVolume, serpExtras } from "./vendors/dataforseo";
 import { clamp } from "./utils";
 
 type TermRow = {
@@ -259,6 +261,38 @@ export async function analyzeTop() {
       commercial >= 70 ? "对比、工具或价格信号比较密，适合带联盟或产品页。" : commercial >= 45 ? "有一定商业意图，但还不是纯购买词。" : "更像讨论或概念，变现要靠后续内容设计。";
     const serp = await serpLinks(term.display);
     const classified = classifySerp(serp.links, term.normalized);
+    const pages = serp.links.map((link) => ({ url: link, ...classifyResultPage(link) }));
+    const shape = deriveSerpShape(pages);
+    const firstSeen = get<{ first_seen_at: string }>("select first_seen_at from terms where id = ?", term.id)?.first_seen_at;
+    const ageDays = firstSeen ? (Date.now() - new Date(firstSeen).getTime()) / 86400000 : 999;
+    const loosened = loosenCompetition(classified.label, ageDays);
+    let allintitle: number | null = null;
+    let ads: boolean | null = null;
+    let volume: number | null = null;
+    if (dataForSeoEnabled()) {
+      try {
+        const extras = await serpExtras(term.display);
+        allintitle = extras.allintitle;
+        ads = extras.ads;
+        volume = await monthlySearchVolume(term.display);
+      } catch {
+        allintitle = null;
+      }
+    }
+    const ratio = kgr(allintitle, volume);
+    const mix = pages.reduce<Record<string, number>>((acc, page) => {
+      acc[page.kind] = (acc[page.kind] ?? 0) + 1;
+      return acc;
+    }, {});
+    const storedRows = classified.rows.map((row) => {
+      const page = pages.find((item) => item.url === row.url);
+      return {
+        ...row,
+        pageKind: page?.kind ?? "article",
+        homepage: Boolean(page?.homepage),
+        platform: Boolean(page?.platform),
+      };
+    });
     const domains = domainCandidates(term.normalized);
     let domain = domains[0] ?? "";
     let domainStatus = "unknown";
@@ -298,14 +332,15 @@ export async function analyzeTop() {
     const method = generated ? "llm" : "heuristic";
     const competitionNote = classified.score == null
       ? serp.note || "竞争度未检测"
-      : `${classified.label}（${serp.provider}）。权威站 ${classified.rows.filter((row) => row.kind === "authority").length} 个，UGC ${classified.rows.filter((row) => row.kind === "ugc").length} 个，小型站点 ${classified.rows.filter((row) => row.kind === "small").length} 个。${classified.dedicated ? "结果里已有贴着这个词的 URL。" : "还没看到大量精确匹配页面。"}`;
+      : `${loosened.label}（${serp.provider}）。SERP 形态 ${shape.shape}，平台结果约占 ${Math.round(shape.platformShare * 100)}%。${loosened.loosened ? "词还年轻，竞争档位放宽了一级。" : ""}${ratio != null ? ` KGR ${ratio}。` : ""}${ads == null ? "" : ads ? " 结果里有广告。" : " 没有看到广告。"}`;
     run(
       `insert into term_analysis (
         term_id, competition_label, competition_score, competition_note, competition_json,
         domain, domain_status, domain_registered_at, land_score, land_note,
         lifecycle, lifecycle_confidence, lifecycle_note, commercial_score, commercial_note,
-        cluster_json, outline_method, updated_at
-      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        cluster_json, outline_method, updated_at,
+        serp_shape, platform_share, young_loosened, kgr, ads_present, page_mix_json
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       on conflict(term_id) do update set
         competition_label=excluded.competition_label,
         competition_score=excluded.competition_score,
@@ -323,12 +358,18 @@ export async function analyzeTop() {
         commercial_note=excluded.commercial_note,
         cluster_json=excluded.cluster_json,
         outline_method=excluded.outline_method,
-        updated_at=excluded.updated_at`,
+        updated_at=excluded.updated_at,
+        serp_shape=excluded.serp_shape,
+        platform_share=excluded.platform_share,
+        young_loosened=excluded.young_loosened,
+        kgr=excluded.kgr,
+        ads_present=excluded.ads_present,
+        page_mix_json=excluded.page_mix_json`,
       term.id,
-      classified.label,
+      loosened.label,
       classified.score,
       competitionNote,
-      JSON.stringify(classified.rows),
+      JSON.stringify(storedRows),
       domain || null,
       domainStatus,
       registered,
@@ -342,6 +383,12 @@ export async function analyzeTop() {
       JSON.stringify(outline),
       method,
       new Date().toISOString(),
+      shape.shape,
+      shape.platformShare,
+      loosened.loosened ? 1 : 0,
+      ratio,
+      ads == null ? null : ads ? 1 : 0,
+      JSON.stringify(mix),
     );
   }
 }

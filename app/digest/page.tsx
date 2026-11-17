@@ -8,11 +8,12 @@ import { Button } from "@/components/ui/button";
 type Payload = {
   items: { id: number; term: string; stageLabel: string; opportunity: number; summary: string; sources: string[] }[];
   backtest: { samples: number; avgLeadHours: number | null };
+  demands?: { term: string; keyword: string; decision: string }[];
 };
 
 export default function DigestPage() {
   const [digest, setDigest] = useState<{ createdAt: string; trigger: string; payload: Payload; delivery: Record<string, unknown> | null } | null>(null);
-  const [backtest, setBacktest] = useState<{ samples: number; avgLeadHours: number | null; weights: { earlyBonus: number } } | null>(null);
+  const [backtest, setBacktest] = useState<{ samples: number; avgLeadHours: number | null; weights: { earlyBonus: number }; trendReview?: { source: string; total: number; hits: number; hitRate: number; medianLeadDays: number | null }[] } | null>(null);
   const [schedule, setSchedule] = useState({ hour: 8, timeZone: "Asia/Shanghai" });
   const [sending, setSending] = useState(false);
 
@@ -55,6 +56,18 @@ export default function DigestPage() {
         )}
       </section>
 
+      <section className="panel mt-4 p-4 text-sm leading-6">
+        <h2 className="font-medium">14 日趋势复核</h2>
+        {!backtest?.trendReview?.length && <p className="mt-2 text-muted">词满 14 天后，如果配了 DataForSEO，会按来源统计命中率和中位领先天数。没配密钥就跳过，不影响采集。</p>}
+        {!!backtest?.trendReview?.length && (
+          <ul className="mt-2 space-y-1">
+            {backtest.trendReview.map((row) => (
+              <li key={row.source}>{row.source}：命中 {Math.round(row.hitRate * 100)}%（{row.hits}/{row.total}）{row.medianLeadDays != null ? `，中位领先 ${row.medianLeadDays} 天` : ""}</li>
+            ))}
+          </ul>
+        )}
+      </section>
+
       <section className="mt-4 space-y-3">
         {!digest && <div className="panel px-4 py-8 text-sm text-muted">首轮采集结束后会留下一份快照。采集快照不会发邮件。</div>}
         {digest?.payload.items.map((item, index) => (
@@ -65,6 +78,9 @@ export default function DigestPage() {
             </div>
             <div className="mt-1 text-xs text-muted">{item.stageLabel} · {item.sources.join("、")}</div>
             <p className="mt-2 text-sm leading-6">{item.summary}</p>
+            {!!digest.payload.demands?.filter((demand) => demand.term === item.term).length && (
+              <p className="mt-2 text-xs text-muted">通用需求词：{digest.payload.demands.filter((demand) => demand.term === item.term).map((demand) => `${demand.keyword}（${demand.decision}）`).join("、")}</p>
+            )}
           </article>
         ))}
         {digest?.delivery && (

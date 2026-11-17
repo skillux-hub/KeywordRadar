@@ -1,4 +1,6 @@
+import { get, run } from "../db";
 import { classifyIndustries, withinDays } from "../extract";
+import { classifyBreakout, repoSearchVariants } from "../signals/breakout";
 import { fetchJson, fetchText } from "../http";
 import { decodeHtml } from "../xml";
 import { readFeed } from "../rss";
@@ -131,7 +133,7 @@ export async function collectProductHunt(): Promise<CollectorResult> {
 export async function collectGithub(): Promise<CollectorResult> {
   const headers: Record<string, string> = { accept: "application/vnd.github+json" };
   if (process.env.GITHUB_TOKEN) headers.authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
-  const repos: { name: string; desc: string; stars: number; url: string }[] = [];
+  const repos: { name: string; desc: string; stars: number; url: string; createdAt: string | null }[] = [];
   const page = await fetchText("https://github.com/trending?since=daily&spoken_language_code=en", {
     browser: true,
     intervalMs: 500,
@@ -143,11 +145,11 @@ export async function collectGithub(): Promise<CollectorResult> {
       const href = block.match(/<h2[\s\S]*?<a[^>]+href="\/([^"]+)"/i)?.[1];
       if (!href || !href.includes("/") || href.startsWith("sponsors/")) continue;
       const desc = decodeHtml(block.match(/<p[^>]*>([\s\S]*?)<\/p>/i)?.[1] ?? "");
-      repos.push({ name: href, desc, stars: 0, url: `https://github.com/${href}` });
+      repos.push({ name: href, desc, stars: 0, url: `https://github.com/${href}`, createdAt: null });
     }
   }
   const since = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
-  const search = await fetchJson<{ items?: { full_name: string; description: string | null; stargazers_count: number; html_url: string }[] }>(
+  const search = await fetchJson<{ items?: { full_name: string; description: string | null; stargazers_count: number; html_url: string; created_at?: string }[] }>(
     `https://api.github.com/search/repositories?q=${encodeURIComponent(`created:>${since} stars:>30`)}&sort=stars&order=desc&per_page=12`,
     { headers, intervalMs: 700, timeoutMs: 12000, hostKey: "api.github.com" },
   );
@@ -158,7 +160,52 @@ export async function collectGithub(): Promise<CollectorResult> {
       desc: item.description ?? "",
       stars: item.stargazers_count,
       url: item.html_url,
+      createdAt: item.created_at ?? null,
     });
+  }
+  let breakouts = 0;
+  const leadDocs: Parameters<typeof hitsFromDoc>[0][] = [];
+  try {
+    let lookups = 0;
+    for (const repo of repos) {
+      if ((!repo.createdAt || repo.stars <= 0) && lookups < 6) {
+        lookups += 1;
+        const info = await fetchJson<{ stargazers_count?: number; created_at?: string }>(`https://api.github.com/repos/${repo.name}`, {
+          headers,
+          intervalMs: 700,
+          timeoutMs: 8000,
+          hostKey: "api.github.com",
+        });
+        if (info.data) {
+          repo.stars = info.data.stargazers_count ?? repo.stars;
+          repo.createdAt = info.data.created_at ?? repo.createdAt;
+        }
+      }
+      if (repo.stars <= 0) continue;
+      const previous = get<{ stars: number }>(
+        "select stars from repo_snapshots where full_name = ? order by collected_at desc limit 1",
+        repo.name,
+      );
+      const decision = classifyBreakout({ createdAt: repo.createdAt, stars: repo.stars, previousStars: previous ? Number(previous.stars) : null });
+      const now = new Date().toISOString();
+      run("insert into repo_snapshots (full_name, stars, created_at, collected_at) values (?, ?, ?, ?)", repo.name, repo.stars, repo.createdAt, now);
+      const already = get("select full_name from repo_breakouts where full_name = ?", repo.name);
+      if (!decision.breakout || already) continue;
+      run("insert into repo_breakouts (full_name, first_breakout_at, stars, reason) values (?, ?, ?, ?)", repo.name, now, repo.stars, decision.reason);
+      breakouts += 1;
+      for (const variant of repoSearchVariants(repo.name)) {
+        leadDocs.push({
+          title: variant,
+          productName: variant,
+          repoName: repo.name,
+          url: repo.url,
+          engagement: repo.stars,
+          industry: classifyIndustries(`${repo.name} ${variant}`)[0] ?? null,
+        });
+      }
+    }
+  } catch {
+    /* 星标快照失败时仍返回这一轮仓库 */
   }
   if (!repos.length) return result("github", "error", page.ok ? "没有解析到仓库" : `趋势页 HTTP ${page.status}，搜索接口也没有结果`);
   const docs = repos.slice(0, 30).map((repo) => ({
@@ -169,7 +216,7 @@ export async function collectGithub(): Promise<CollectorResult> {
     engagement: repo.stars,
     industry: classifyIndustries(`${repo.name} ${repo.desc}`)[0] ?? null,
   }));
-  return result("github", "ok", `趋势页与新仓库合计 ${docs.length} 个`, { hits: takeHits(docs, 100) });
+  return result("github", "ok", `趋势页与新仓库合计 ${docs.length} 个，首次爆发 ${breakouts} 个`, { hits: takeHits([...leadDocs, ...docs], 100) });
 }
 
 export async function collectBluesky(ctx: CollectContext): Promise<CollectorResult> {
