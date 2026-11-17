@@ -1,10 +1,14 @@
 # KeywordRadar
 
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL_3.0-blue.svg)](LICENSE)
+
 SEO 新词雷达。给做英语市场的 SEO 用的早期关键词雷达。它不去等 Google 趋势变热，而是先听社区、新品、仓库、通讯和竞品新页面，再用 Google 自动补全和每日趋势确认这个词是不是已经晚了。
 
 界面是简体中文。数据源只覆盖海外英语市场（美国为主，种子可以选英国、加拿大、澳大利亚）。没有中文平台。
 
 ![雷达首页](docs/dashboard.png)
+
+![雷达首页（手机）](docs/dashboard-mobile.png)
 
 ## 本地运行
 
@@ -181,3 +185,11 @@ fly deploy
 - Reddit 的 JSON 在很多机房 IP 上是 403，所以默认走 RSS。RSS 没有分数，帖子热度要等官方 API 才准。
 - TikTok、Quora、Amazon、Etsy 经常被拦，数据源页会写明失败原因。
 - 生命周期和回测需要多轮快照。第一天大部分词会是「观察中」，这是故意的。
+
+## 许可
+
+个人使用和开源使用免费，遵循 [GNU AGPL-3.0](LICENSE)。如果你修改本软件，并通过网络向别人提供服务，AGPL 要求你向这些用户提供对应的源代码。
+
+不想遵守 AGPL 的使用需要购买商业许可，包括闭源分发，以及不按 AGPL 公开修改的商业 SaaS。商业许可不由本仓库自动授予。说明见 [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md)。仓库里没有单独的联系邮箱，请通过 [GitHub Issues](https://github.com/skillux-hub/KeywordRadar/issues) 联系我们。
+
+**License.** Personal and open-source use is free under the [GNU Affero General Public License v3.0](LICENSE). If you modify this software and make it available over a network, the AGPL requires you to offer users the corresponding source. Closed-source distribution and commercial SaaS that does not comply with the AGPL require a paid commercial license. See [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md). Contact us via [GitHub Issues](https://github.com/skillux-hub/KeywordRadar/issues).
