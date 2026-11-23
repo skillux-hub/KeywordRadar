@@ -2,7 +2,7 @@ import { INTENT_LABEL, SOURCE_LABEL, industryName, stageMeta } from "./catalog";
 import { xProviderConfigured } from "./sources/x-provider";
 import { all, get, num } from "./db";
 import { slicePage } from "./pagination";
-import { readWeights } from "./score";
+import { ensureNovelty, readWeights } from "./score";
 
 export type Filters = {
   industry?: string;
@@ -59,10 +59,12 @@ function keywordWhere(filters: Filters) {
     sql += " and (t.normalized like ? or t.display like ?)";
     params.push(`%${filters.q.toLowerCase()}%`, `%${filters.q}%`);
   }
+  sql += " and t.novelty = 'novel'";
   return { where: sql, params };
 }
 
 export function listKeywords(filters: Filters & { page?: number; size?: number; all?: boolean }) {
+  ensureNovelty();
   const { where, params } = keywordWhere(filters);
   const summaryRow = get<{ total: number; earliest: number; spreading: number; published: number; on_google: number; avg_score: number | null }>(
     `select count(*) as total,
@@ -112,6 +114,8 @@ function presentTerm(row: Record<string, unknown>) {
     intentLabel: INTENT_LABEL[String(row.intent || "unknown")] ?? "未判定",
     summary: String(row.summary || ""),
     firstSeen: String(row.first_seen_at),
+    novelty: String(row.novelty || "unverified"),
+    noveltyReason: String(row.novelty_reason || ""),
     lastSeen: String(row.last_seen_at),
     sources,
     sourceLabels: sources.map((source) => SOURCE_LABEL[source] ?? source),
@@ -280,11 +284,11 @@ function loadKpis() {
   const day = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
   const start = new Date(`${day}T00:00:00+08:00`).toISOString();
   const leads = all<{ lead_hours: number }>(
-    "select lead_hours from terms where lead_hours is not null and lead_hours > 0 and ifnull(google_at_discovery, 0) = 0",
+    "select lead_hours from terms where novelty = 'novel' and lead_hours is not null and lead_hours > 0 and ifnull(google_at_discovery, 0) = 0",
   );
   const statuses = all<{ status: string }>("select status from source_status");
   return {
-    newToday: num(get<{ c: number }>("select count(*) as c from terms where first_seen_at >= ?", start)?.c),
+    newToday: num(get<{ c: number }>("select count(*) as c from terms where novelty = 'novel' and first_seen_at >= ?", start)?.c),
     blueOcean: num(get<{ c: number }>("select count(*) as c from term_analysis where competition_label = '蓝海'")?.c),
     avgLeadHours: leads.length ? Math.round((leads.reduce((sum, row) => sum + num(row.lead_hours), 0) / leads.length) * 10) / 10 : null,
     leadSamples: leads.length,
@@ -295,6 +299,7 @@ function loadKpis() {
 }
 
 export function jobStatus() {
+  ensureNovelty();
   const job = get<Record<string, unknown>>("select * from job_state where id = 1");
   const x = get<{ status: string; message: string }>("select status, message from source_status where source = 'x'");
   return {

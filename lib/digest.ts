@@ -3,7 +3,7 @@ import { SOURCE_LABEL, stageMeta } from "./catalog";
 import { all, get, run } from "./db";
 import { fetchText } from "./http";
 import { trendReviewSummary } from "./enrich";
-import { readWeights } from "./score";
+import { ensureNovelty, readWeights } from "./score";
 import { zonedNow } from "./utils";
 
 type DigestItem = {
@@ -19,6 +19,7 @@ type DigestItem = {
 };
 
 export function buildDigestItems(): DigestItem[] {
+  ensureNovelty();
   const primary = all<{
     id: number;
     display: string;
@@ -28,7 +29,7 @@ export function buildDigestItems(): DigestItem[] {
     first_seen_at: string;
   }>(
     `select id, display, stage, opportunity_score, summary, first_seen_at
-     from terms where ifnull(stage,'earliest') != 'on_google'
+     from terms where novelty = 'novel' and ifnull(stage,'earliest') != 'on_google'
      order by opportunity_score desc limit 10`,
   );
   const rows = primary.length >= 10
@@ -37,6 +38,7 @@ export function buildDigestItems(): DigestItem[] {
         ...primary,
         ...all<typeof primary[number]>(
           `select id, display, stage, opportunity_score, summary, first_seen_at from terms
+           where novelty = 'novel'
            order by opportunity_score desc limit 10`,
         ),
       ].filter((row, index, list) => list.findIndex((item) => item.id === row.id) === index).slice(0, 10);

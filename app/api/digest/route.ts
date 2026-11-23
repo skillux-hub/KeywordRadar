@@ -12,7 +12,7 @@ export function GET(request: Request) {
   if (denied) return denied;
   const url = new URL(request.url);
   const row = latestDigest();
-  const leadWhere = "lead_hours is not null and ifnull(google_at_discovery, 0) = 0 and lead_hours > 0";
+  const leadWhere = "novelty = 'novel' and lead_hours is not null and ifnull(google_at_discovery, 0) = 0 and lead_hours > 0";
   const samples = num(get<{ c: number }>(`select count(*) as c from terms where ${leadWhere}`)?.c);
   const avg = samples ? num(get<{ v: number }>(`select avg(lead_hours) as v from terms where ${leadWhere}`)?.v) : null;
   const leadSize = parseSize(url.searchParams.get("leadSize"), 10, DETAIL_SIZES);

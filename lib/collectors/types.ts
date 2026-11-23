@@ -1,4 +1,4 @@
-import { detectIntent, phrasesFromText, quoteAround, type Intent } from "../extract";
+import { detectIntent, normalize, phrasesFromText, quoteAround, type Intent } from "../extract";
 
 export type CollectContext = {
   seeds: { id: number; topic: string; region: string; industry: string | null }[];
@@ -25,6 +25,8 @@ export type Hit = {
   publishedAt?: string;
   intent?: Intent;
   kind?: string;
+  bornKind?: "repo_created" | "domain_registered" | "wikipedia_created" | "product_launch";
+  bornAt?: string;
 };
 
 export type FeedItem = {
@@ -92,12 +94,16 @@ export type Doc = {
   repoName?: string;
   slug?: string;
   social?: boolean;
+  entityName?: string;
+  bornKind?: "repo_created" | "domain_registered" | "wikipedia_created" | "product_launch";
+  bornAt?: string;
 };
 
 export function hitsFromDoc(doc: Doc): Hit[] {
   const phrases = phrasesFromText(doc);
   const intent = detectIntent(`${doc.title ?? ""} ${doc.body ?? ""} ${doc.productName ?? ""}`);
   const plain = `${doc.title ?? ""} ${doc.body ?? ""}`.trim();
+  const entity = doc.entityName ? normalize(doc.entityName) : "";
   return phrases.map((phrase) => ({
     term: phrase.display,
     always: phrase.always,
@@ -112,6 +118,8 @@ export function hitsFromDoc(doc: Doc): Hit[] {
     publishedAt: doc.publishedAt,
     intent,
     kind: phrase.kind,
+    bornKind: entity && phrase.term === entity ? doc.bornKind : undefined,
+    bornAt: entity && phrase.term === entity ? doc.bornAt : undefined,
   }));
 }
 

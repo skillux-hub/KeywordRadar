@@ -230,6 +230,7 @@ export async function analyzeTop() {
   const terms = all<TermRow>(
     `select id, display, normalized, stage, intent, summary, spark_json, discovery_score
      from terms
+     where novelty = 'novel'
      order by case when stage = 'on_google' then 1 else 0 end, discovery_score desc
      limit 12`,
   );

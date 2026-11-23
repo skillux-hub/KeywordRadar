@@ -317,6 +317,13 @@ function migrate(db: DatabaseSync) {
       score REAL,
       created_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS term_age_evidence (
+      term_id INTEGER NOT NULL,
+      kind TEXT NOT NULL,
+      observed_at TEXT,
+      note TEXT,
+      PRIMARY KEY (term_id, kind)
+    );
     CREATE INDEX IF NOT EXISTS idx_discovery_events ON discovery_events(action, created_at);
     CREATE TABLE IF NOT EXISTS http_cache (
       cache_key TEXT PRIMARY KEY,
@@ -327,6 +334,8 @@ function migrate(db: DatabaseSync) {
   `);
   db.prepare("INSERT OR IGNORE INTO job_state (id, running) VALUES (1, 0)").run();
   ensureColumn(db, "terms", "name_score", "REAL");
+  ensureColumn(db, "terms", "novelty", "TEXT");
+  ensureColumn(db, "terms", "novelty_reason", "TEXT");
   ensureColumn(db, "term_analysis", "serp_shape", "TEXT");
   ensureColumn(db, "term_analysis", "platform_share", "REAL");
   ensureColumn(db, "term_analysis", "young_loosened", "INTEGER");

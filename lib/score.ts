@@ -1,6 +1,7 @@
 import { SOURCE_LABEL } from "./catalog";
 import { all, get, num, run } from "./db";
 import { detectIntent, isNoiseTerm, normalize, painNote } from "./extract";
+import { judgeNovelty, type AgeEvidence } from "./novelty";
 import { redditSpreadBoost } from "./sources/metrics";
 import { clamp } from "./utils";
 
@@ -155,9 +156,10 @@ export function scoreAll() {
     const summary = [`出现在${names}。`, intentLine[intent] ?? intentLine.unknown, pain ? `痛点：${pain}。` : "", quote ? `原话：${quote}` : ""]
       .filter(Boolean)
       .join("");
+    const verdict = judgeNovelty(term.display, ageEvidenceFor(term.id), now);
     const lastSeen = obs.map((row) => row.collected_at).sort().at(-1) ?? new Date(now).toISOString();
     run(
-      `update terms set stage=?, discovery_score=?, opportunity_score=?, momentum_score=?, newness_score=?, intent=?, summary=?, influencer_count=?, spark_json=?, last_seen_at=? where id=?`,
+      `update terms set stage=?, discovery_score=?, opportunity_score=?, momentum_score=?, newness_score=?, intent=?, summary=?, influencer_count=?, spark_json=?, last_seen_at=?, novelty=?, novelty_reason=? where id=?`,
       stage,
       Number(discovery.toFixed(1)),
       Number(opportunity.toFixed(1)),
@@ -168,6 +170,8 @@ export function scoreAll() {
       influencers.length,
       JSON.stringify(sparkline(obs, now)),
       lastSeen,
+      verdict.status,
+      verdict.reason,
       term.id,
     );
     for (const source of sources) run("insert or ignore into term_sources (term_id, source) values (?, ?)", term.id, source);
@@ -211,9 +215,37 @@ function lifecycleDurability(obs: Obs[], now: number) {
   return 50;
 }
 
+export function ageEvidenceFor(termId: number): AgeEvidence[] {
+  const rows = all<{ kind: AgeEvidence["kind"]; observed_at: string | null }>("select kind, observed_at from term_age_evidence where term_id = ?", termId);
+  const domain = get<{ domain_registered_at: string | null }>("select domain_registered_at from term_analysis where term_id = ?", termId);
+  const evidence: AgeEvidence[] = rows.map((row) => ({ kind: row.kind, at: row.observed_at }));
+  if (domain?.domain_registered_at) evidence.push({ kind: "domain_registered", at: domain.domain_registered_at });
+  return evidence;
+}
+
+let noveltyReady = false;
+
+export function ensureNovelty() {
+  if (noveltyReady) return;
+  noveltyReady = true;
+  try {
+    reclassifyNovelty();
+  } catch {
+    noveltyReady = false;
+  }
+}
+
+export function reclassifyNovelty(now = Date.now()) {
+  const terms = all<{ id: number; display: string }>("select id, display from terms");
+  for (const term of terms) {
+    const verdict = judgeNovelty(term.display, ageEvidenceFor(term.id), now);
+    run("update terms set novelty = ?, novelty_reason = ? where id = ?", verdict.status, verdict.reason, term.id);
+  }
+}
+
 export function tuneWeights() {
   const rows = all<{ lead_hours: number }>(
-    "select lead_hours from terms where lead_hours is not null and ifnull(google_at_discovery, 0) = 0 and lead_hours > 0",
+    "select lead_hours from terms where novelty = 'novel' and lead_hours is not null and ifnull(google_at_discovery, 0) = 0 and lead_hours > 0",
   );
   const reviewLeads = all<{ lead_days: number }>("select lead_days from trends_reviews where hit = 1 and lead_days is not null").map((row) => num(row.lead_days) * 24);
   const samples = [...rows.map((row) => num(row.lead_hours)), ...reviewLeads];

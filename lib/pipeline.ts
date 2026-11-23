@@ -177,6 +177,17 @@ function persist(collector: CollectorResult, runId: number) {
         evidence.kind ?? null,
         now,
       );
+      if (evidence.bornKind && evidence.bornAt) {
+        run(
+          `insert into term_age_evidence (term_id, kind, observed_at, note)
+           values (?, ?, ?, ?)
+           on conflict(term_id, kind) do update set observed_at = excluded.observed_at, note = excluded.note`,
+          termId,
+          evidence.bornKind,
+          evidence.bornAt,
+          evidence.url ?? null,
+        );
+      }
     }
     kept += 1;
   }

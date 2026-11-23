@@ -23,6 +23,8 @@ type Detail = {
   newness: number;
   intentLabel: string;
   summary: string;
+  novelty?: string;
+  noveltyReason?: string;
   firstSeen: string;
   sources: string[];
   sourceLabels: string[];
@@ -146,6 +148,8 @@ export default function TermPage({ params }: { params: Promise<{ id: string }> }
                 </div>
                 <h1 className="mt-3 break-words text-2xl font-semibold tracking-tight sm:text-4xl">{data.term}</h1>
                 {data.nameScore != null && <p className="mt-1 text-xs text-faint">专名判断 {Math.round(data.nameScore * 100)} / 100</p>}
+                {data.novelty && data.novelty !== "novel" && <p className="mt-2 text-sm text-muted">未列入新词推荐。{data.noveltyReason}</p>}
+                {data.novelty === "novel" && data.noveltyReason && <p className="mt-2 text-sm text-muted">新词证据：{data.noveltyReason}</p>}
                 <p className="mt-3 max-w-3xl break-words text-sm leading-6 text-muted">{data.summary}</p>
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   {data.sources.map((source, index) => (
