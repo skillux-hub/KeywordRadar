@@ -31,6 +31,7 @@ type Detail = {
   searchMethod?: string;
   searchNote?: string;
   searchCheckedAt?: string;
+  sourceGroups?: { sources: string[]; urls: string[]; authors: string[]; titles: string[]; firstAt: string | null; lastAt: string | null; why: string }[];
   firstSeen: string;
   sources: string[];
   sourceLabels: string[];
@@ -156,6 +157,20 @@ export default function TermPage({ params }: { params: Promise<{ id: string }> }
                 {data.nameScore != null && <p className="mt-1 text-xs text-faint">专名判断 {Math.round(data.nameScore * 100)} / 100</p>}
                 {data.novelty && data.novelty !== "novel" && <p className="mt-2 text-sm text-muted">未列入新词推荐。{data.noveltyReason}</p>}
                 {data.novelty === "novel" && <p className="mt-2 text-sm text-muted">已确认。{data.focusIndustry ? `行业 ${data.focusIndustry}。` : ""}独立来源 {data.independentSources ?? 0} 组。{data.noveltyReason}</p>}
+                {!!data.sourceGroups?.length && (
+                  <ul className="mt-3 space-y-2 text-sm text-muted">
+                    {data.sourceGroups.map((group, index) => (
+                      <li key={`${group.firstAt}-${index}`} className="break-words">
+                        第 {index + 1} 组 · {(group.sources || []).join("、") || "来源未标"} · {group.firstAt || "时间未知"}
+                        {group.authors?.length ? ` · ${group.authors.join("、")}` : ""}
+                        。{group.why}
+                        {group.urls?.map((url) => (
+                          <a key={url} className="ml-2 text-primary underline" href={url} target="_blank" rel="noopener noreferrer">{url}</a>
+                        ))}
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 <p className="mt-3 max-w-3xl break-words text-sm leading-6 text-muted">{data.summary}</p>
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   {data.sources.map((source, index) => (

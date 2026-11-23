@@ -213,7 +213,7 @@ export function Dashboard() {
           <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-faint">Keyword radar</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-[28px]">早于 Google 的搜索机会</h1>
           <p className="mt-1 hidden max-w-2xl text-sm leading-6 text-muted sm:block">
-            {summary.total} 个已验证的新词在当前筛选里。没有独立年龄证据的候选不会出现在这里。上次采集 {status?.finishedAt ? ago(status.finishedAt) : "还没完成"}。
+            {summary.total} 个已确认的新词在当前筛选里。需要 AI 工具或开发者工具基线内、窗口中至少两组可分开来源；单一来源、旧词和新域名单独出现都不会进入。上次采集 {status?.finishedAt ? ago(status.finishedAt) : "还没完成"}。
           </p>
         </div>
         <div className="flex gap-2">

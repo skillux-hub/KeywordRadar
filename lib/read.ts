@@ -136,7 +136,18 @@ function presentTerm(row: Record<string, unknown>) {
     spark: row.spark_json ? (JSON.parse(String(row.spark_json)) as number[]) : [],
     nameScore: row.name_score == null ? null : num(row.name_score),
     serpShape: get<{ serp_shape: string | null }>("select serp_shape from term_analysis where term_id = ?", id)?.serp_shape ?? "",
+    sourceGroups: parseGroups(row.source_groups),
   };
+}
+
+function parseGroups(value: unknown) {
+  if (!value) return [] as { sources: string[]; urls: string[]; authors: string[]; titles: string[]; firstAt: string | null; lastAt: string | null; why: string }[];
+  try {
+    const parsed = JSON.parse(String(value));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
 }
 
 function mapEvidence(item: Record<string, unknown>) {
