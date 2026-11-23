@@ -12,7 +12,7 @@ export const viewport: Viewport = {
 
 export const metadata: Metadata = {
   title: "KeywordRadar",
-  description: "在 Google 收录之前，从英语市场的早期讨论里找出值得抢的搜索词。",
+  description: "从英语市场的早期讨论里找候选词。没有索引证据时标为未知，不表示已经领先搜索引擎。",
 };
 
 function isProtected(pathname: string) {

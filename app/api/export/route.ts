@@ -17,7 +17,7 @@ export function GET(request: Request) {
     shape: url.searchParams.get("shape") || undefined,
     all: true,
   });
-  const header = ["关键词", "阶段", "机会分", "发现分", "意图", "来源", "行业", "首次发现", "已上Google", "摘要"];
+  const header = ["关键词", "阶段", "机会分", "发现分", "意图", "来源", "行业", "首次发现", "索引证据", "摘要"];
   const lines = items.map((item) =>
     [item.term, item.stageLabel, item.opportunity, item.discovery, item.intentLabel, item.sourceLabels.join("|"), item.industryLabels.join("|"), item.firstSeen, item.onGoogle ? "是" : "否", item.summary]
       .map((cell) => `"${String(cell).replace(/"/g, '""')}"`)

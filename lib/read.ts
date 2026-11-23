@@ -128,7 +128,7 @@ function presentTerm(row: Record<string, unknown>) {
     industries,
     industryLabels: industries.map((industry) => industryName(industry)),
     influencerCount: num(row.influencer_count),
-    onGoogle: num(row.on_suggest) === 1 || num(row.on_trends) === 1,
+    onGoogle: String(row.search_status || "") === "indexed",
     onSuggest: num(row.on_suggest) === 1,
     onTrends: num(row.on_trends) === 1,
     leadHours: row.lead_hours == null ? null : num(row.lead_hours),
@@ -136,17 +136,26 @@ function presentTerm(row: Record<string, unknown>) {
     spark: row.spark_json ? (JSON.parse(String(row.spark_json)) as number[]) : [],
     nameScore: row.name_score == null ? null : num(row.name_score),
     serpShape: get<{ serp_shape: string | null }>("select serp_shape from term_analysis where term_id = ?", id)?.serp_shape ?? "",
-    sourceGroups: parseGroups(row.source_groups),
+    sourceGroups: parseGroupPayload(row.source_groups).groups,
+    confirmationWindow: parseGroupPayload(row.source_groups),
   };
 }
 
-function parseGroups(value: unknown) {
-  if (!value) return [] as { sources: string[]; urls: string[]; authors: string[]; titles: string[]; firstAt: string | null; lastAt: string | null; why: string }[];
+function parseGroupPayload(value: unknown) {
+  const empty = { windowHours: null as number | null, windowStart: null as string | null, windowEnd: null as string | null, groups: [] as { sources: string[]; urls: string[]; authors: string[]; titles: string[]; firstAt: string | null; lastAt: string | null; why: string }[] };
+  if (!value) return empty;
   try {
     const parsed = JSON.parse(String(value));
-    return Array.isArray(parsed) ? parsed : [];
+    if (Array.isArray(parsed)) return { ...empty, groups: parsed };
+    const groups = Array.isArray(parsed?.groups) ? parsed.groups : [];
+    return {
+      windowHours: parsed?.windowHours == null ? null : num(parsed.windowHours),
+      windowStart: parsed?.windowStart ? String(parsed.windowStart) : null,
+      windowEnd: parsed?.windowEnd ? String(parsed.windowEnd) : null,
+      groups,
+    };
   } catch {
-    return [];
+    return empty;
   }
 }
 

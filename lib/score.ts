@@ -1,6 +1,6 @@
 import { SOURCE_LABEL } from "./catalog";
 import { all, get, num, run } from "./db";
-import { detectIntent, isNoiseTerm, normalize, painNote } from "./extract";
+import { classifyIndustries, detectIntent, isNoiseTerm, normalize, painNote } from "./extract";
 import { judgeBirth, type Sighting } from "./novelty";
 import { type AgeEvidence } from "./novelty";
 import { redditSpreadBoost } from "./sources/metrics";
@@ -52,7 +52,8 @@ export function scoreAll() {
     on_suggest: number;
     on_trends: number;
     name_score: number | null;
-  }>("select id, display, first_seen_at, on_suggest, on_trends, name_score from terms");
+    search_status: string | null;
+  }>("select id, display, first_seen_at, on_suggest, on_trends, name_score, search_status from terms");
   run("delete from term_sources");
   run("delete from term_industries");
   run("delete from term_seeds");
@@ -66,9 +67,9 @@ export function scoreAll() {
     const sources = [...new Set(obs.map((row) => row.source))];
     const early = sources.filter((source) => EARLY.has(source));
     const published = sources.filter((source) => PUBLISHED.has(source));
-    const onGoogle = term.on_suggest === 1 || term.on_trends === 1;
+    const indexed = term.search_status === "indexed";
     let stage = "earliest";
-    if (onGoogle) stage = "on_google";
+    if (indexed) stage = "on_google";
     else if (early.length >= 2) stage = "spreading";
     else if (early.length === 1) stage = "earliest";
     else if (published.length) stage = "published";
@@ -86,11 +87,11 @@ export function scoreAll() {
     if (prev === 0 && recent > 0) momentum = 80;
     else if (prev > 0) momentum = clamp(50 + 28 * Math.log2((recent + 0.5) / (prev + 0.5)), 8, 100);
     const cross = clamp((sources.length / 5) * 100, 0, 100);
-    const earliness = onGoogle ? 12 : early.length >= 2 ? 96 : early.length === 1 ? 86 : published.length ? 46 : 70;
+    const earliness = indexed ? 12 : early.length >= 2 ? 96 : early.length === 1 ? 86 : published.length ? 46 : 70;
     const engagement = clamp(Math.log10(1 + obs.reduce((sum, row) => sum + num(row.engagement), 0)) * 30, 0, 100);
     let discovery = 0.28 * newness + 0.22 * momentum + 0.18 * cross + 0.22 * earliness + 0.1 * engagement;
-    if (!onGoogle && early.length >= 1) discovery += weights.earlyBonus;
-    if (!onGoogle && early.length >= 2) discovery += weights.earlyBonus * 0.75;
+    if (!indexed && early.length >= 1) discovery += weights.earlyBonus;
+    if (!indexed && early.length >= 2) discovery += weights.earlyBonus * 0.75;
 
     const influencers = all<{ author: string }>(
       "select distinct author as author from term_evidence where term_id = ? and source = 'x' and author is not null and author != ''",
@@ -120,7 +121,7 @@ export function scoreAll() {
     if (term.name_score != null && term.name_score < 0.35) discovery *= 0.55;
     if (!strongEvidence) discovery *= 0.38;
     else if (sources.length >= 2) discovery += 8;
-    if (onGoogle) discovery *= 0.52;
+    if (indexed) discovery *= 0.52;
     discovery = clamp(discovery, 0, 100);
 
     const sample = all<{ quote: string | null; title: string | null; intent: string | null }>(
@@ -175,7 +176,7 @@ export function scoreAll() {
       verdict.reason,
       verdict.independent,
       verdict.industry,
-      JSON.stringify(verdict.groups),
+      JSON.stringify({ windowHours: verdict.windowHours, windowStart: verdict.windowStart, windowEnd: verdict.windowEnd, groups: verdict.groups }),
       term.id,
     );
     for (const source of sources) run("insert or ignore into term_sources (term_id, source) values (?, ?)", term.id, source);
@@ -219,12 +220,8 @@ function lifecycleDurability(obs: Obs[], now: number) {
   return 50;
 }
 
-export function birthVerdict(termId: number, display: string, industries: string[] = [], now = Date.now()) {
-  const seen = new Set(industries.filter(Boolean));
-  for (const row of all<{ industry: string | null }>("select distinct industry from term_observations where term_id = ?", termId)) {
-    if (row.industry) seen.add(row.industry);
-  }
-  for (const row of all<{ industry: string }>("select industry from term_industries where term_id = ?", termId)) seen.add(row.industry);
+export function birthVerdict(termId: number, display: string, _industries: string[] = [], now = Date.now()) {
+  void _industries;
   const sightings = all<{ source: string; url: string | null; author: string | null; title: string | null; published_at: string | null; collected_at: string | null; industry: string | null }>(
     "select source, url, author, title, published_at, collected_at, industry from term_evidence where term_id = ?",
     termId,
@@ -236,7 +233,7 @@ export function birthVerdict(termId: number, display: string, industries: string
     industry: row.industry,
     at: row.published_at || row.collected_at,
   }));
-  return judgeBirth({ term: display, industries: [...seen], sightings, ageEvidence: ageEvidenceFor(termId), now });
+  return judgeBirth({ term: display, industries: classifyIndustries(display), sightings, ageEvidence: ageEvidenceFor(termId), now });
 }
 
 export function ageEvidenceFor(termId: number): AgeEvidence[] {
@@ -260,16 +257,32 @@ export function ensureNovelty() {
 }
 
 export function reclassifyNovelty(now = Date.now()) {
-  const terms = all<{ id: number; display: string }>("select id, display from terms");
+  const terms = all<{ id: number; display: string; stage: string | null; search_status: string | null; search_method: string | null }>(
+    "select id, display, stage, search_status, search_method from terms",
+  );
   for (const term of terms) {
     const verdict = birthVerdict(term.id, term.display, [], now);
+    let searchStatus = term.search_status;
+    let searchNote: string | null = null;
+    if ((searchStatus === "indexed" || searchStatus === "absent") && term.search_method !== "dataforseo") {
+      searchStatus = "unknown";
+      searchNote = "自动补全或每日趋势不能当作索引证据，已改回未知。这两项仍留在辅助字段。";
+    }
+    let stage = term.stage || "earliest";
+    if (stage === "on_google" && searchStatus !== "indexed") {
+      const sources = num(get<{ c: number }>("select count(*) as c from term_sources where term_id = ?", term.id)?.c);
+      stage = sources >= 2 ? "spreading" : "earliest";
+    }
     run(
-      "update terms set novelty = ?, novelty_reason = ?, independent_sources = ?, focus_industry = ?, source_groups = ? where id = ?",
+      "update terms set novelty = ?, novelty_reason = ?, independent_sources = ?, focus_industry = ?, source_groups = ?, stage = ?, search_status = coalesce(?, search_status), search_note = coalesce(?, search_note) where id = ?",
       verdict.status,
       verdict.reason,
       verdict.independent,
       verdict.industry,
-      JSON.stringify(verdict.groups),
+      JSON.stringify({ windowHours: verdict.windowHours, windowStart: verdict.windowStart, windowEnd: verdict.windowEnd, groups: verdict.groups }),
+      stage,
+      searchStatus,
+      searchNote,
       term.id,
     );
   }

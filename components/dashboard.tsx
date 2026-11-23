@@ -211,9 +211,9 @@ export function Dashboard() {
       <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div className="min-w-0">
           <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-faint">Keyword radar</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-[28px]">早于 Google 的搜索机会</h1>
+          <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-[28px]">英语市场的新词候选</h1>
           <p className="mt-1 hidden max-w-2xl text-sm leading-6 text-muted sm:block">
-            {summary.total} 个已确认的新词在当前筛选里。需要 AI 工具或开发者工具基线内、窗口中至少两组可分开来源；单一来源、旧词和新域名单独出现都不会进入。上次采集 {status?.finishedAt ? ago(status.finishedAt) : "还没完成"}。
+            {summary.total} 个已确认的新词在当前筛选里。要同时有独立诞生记录、历史排除，以及窗口内两组可分开来源。只有讨论、旧词、新域名或新仓库都不会进入；筛空是正常结果。上次采集 {status?.finishedAt ? ago(status.finishedAt) : "还没完成"}。
           </p>
         </div>
         <div className="flex gap-2">
@@ -239,7 +239,7 @@ export function Dashboard() {
       <div className="mb-3 grid grid-cols-2 gap-2 xl:grid-cols-4 sm:mb-5 sm:gap-3">
         <Kpi label="今日新词" value={kpis ? String(kpis.newToday) : "—"} hint="上海时区，首次发现" />
         <Kpi label="蓝海" value={kpis ? String(kpis.blueOcean) : "—"} hint="竞争检测标成蓝海" />
-        <Kpi label="平均领先" value={kpis?.avgLeadHours == null ? "—" : `${kpis.avgLeadHours}h`} hint={kpis?.leadSamples ? `${kpis.leadSamples} 个已回测` : "还没有闭环样本"} />
+        <Kpi label="补全时间差" value={kpis?.avgLeadHours == null ? "—" : `${kpis.avgLeadHours}h`} hint={kpis?.leadSamples ? `${kpis.leadSamples} 个对照，不是收录证明` : "还没有对照样本"} />
         <Kpi label="来源健康" value={kpis ? `${kpis.sourcesOk}/${kpis.sourcesTotal}` : "—"} hint={kpis ? `${kpis.sourcesError} 个失败` : "等待状态"} />
       </div>
 
@@ -277,7 +277,7 @@ export function Dashboard() {
         <div className="panel px-5 py-16 text-center">
           <Waves className="mx-auto text-faint" size={28} />
           <p className="mt-3 text-base font-medium">{status?.running ? "正在听早期信号" : "这一筛里还没有词"}</p>
-          <p className="mx-auto mt-1 max-w-sm text-sm text-muted">{status?.running ? "社区和仓库会先回来，Google 验证放在最后。" : "放宽阶段或时间，或点立即刷新。"}</p>
+          <p className="mx-auto mt-1 max-w-sm text-sm text-muted">{status?.running ? "社区和仓库会先回来，搜索校验只做辅助，不表示已经收录。" : "放宽阶段或时间，或点立即刷新。筛空是正常结果。"}</p>
         </div>
       )}
 

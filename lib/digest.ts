@@ -137,8 +137,8 @@ function digestText(payload: { title: string; items: DigestItem[]; backtest: { s
   lines.push("");
   lines.push(
     payload.backtest.samples
-      ? `回测样本 ${payload.backtest.samples} 个，平均领先 Google ${payload.backtest.avgLeadHours?.toFixed(1)} 小时。`
-      : "还没有「先发现、后被 Google 收录」的闭环样本。",
+      ? `回测样本 ${payload.backtest.samples} 个。自动补全或趋势后来出现的时间差平均 ${payload.backtest.avgLeadHours?.toFixed(1)} 小时，这不是索引收录证明。`
+      : "还没有自动补全或趋势的后续对照样本。没有索引证据时不能写成已收录或未收录。",
   );
   return lines.join("\n");
 }

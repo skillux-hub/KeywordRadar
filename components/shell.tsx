@@ -48,7 +48,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-button text-sm font-semibold text-white">径</span>
             <span>
               <span className="block text-sm font-semibold leading-none tracking-tight">新词雷达</span>
-              <span className="mt-1 block text-[11px] text-faint">英语市场 · 早于 Google</span>
+              <span className="mt-1 block text-[11px] text-faint">英语市场 · 不保证先于搜索引擎</span>
             </span>
           </Link>
           <div className="flex items-center gap-1">

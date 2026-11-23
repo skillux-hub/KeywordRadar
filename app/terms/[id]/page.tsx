@@ -32,6 +32,7 @@ type Detail = {
   searchNote?: string;
   searchCheckedAt?: string;
   sourceGroups?: { sources: string[]; urls: string[]; authors: string[]; titles: string[]; firstAt: string | null; lastAt: string | null; why: string }[];
+  confirmationWindow?: { windowHours: number | null; windowStart: string | null; windowEnd: string | null; groups: { firstAt: string | null; lastAt: string | null }[] };
   firstSeen: string;
   sources: string[];
   sourceLabels: string[];
@@ -157,11 +158,17 @@ export default function TermPage({ params }: { params: Promise<{ id: string }> }
                 {data.nameScore != null && <p className="mt-1 text-xs text-faint">专名判断 {Math.round(data.nameScore * 100)} / 100</p>}
                 {data.novelty && data.novelty !== "novel" && <p className="mt-2 text-sm text-muted">未列入新词推荐。{data.noveltyReason}</p>}
                 {data.novelty === "novel" && <p className="mt-2 text-sm text-muted">已确认。{data.focusIndustry ? `行业 ${data.focusIndustry}。` : ""}独立来源 {data.independentSources ?? 0} 组。{data.noveltyReason}</p>}
+                {data.confirmationWindow?.windowStart && (
+                  <p className="mt-2 text-sm text-muted">
+                    计数窗口 {data.confirmationWindow.windowHours ?? 48} 小时，从 {data.confirmationWindow.windowStart} 到 {data.confirmationWindow.windowEnd}。下面只列出落入这个子窗口、并被计入的组，不是全部历史讨论。
+                  </p>
+                )}
                 {!!data.sourceGroups?.length && (
                   <ul className="mt-3 space-y-2 text-sm text-muted">
                     {data.sourceGroups.map((group, index) => (
                       <li key={`${group.firstAt}-${index}`} className="break-words">
-                        第 {index + 1} 组 · {(group.sources || []).join("、") || "来源未标"} · {group.firstAt || "时间未知"}
+                        计入的第 {index + 1} 组 · {(group.sources || []).join("、") || "来源未标"} · {group.firstAt || "时间未知"}
+                        {group.lastAt && group.lastAt !== group.firstAt ? ` 至 ${group.lastAt}` : ""}
                         {group.authors?.length ? ` · ${group.authors.join("、")}` : ""}
                         。{group.why}
                         {group.urls?.map((url) => (
@@ -181,7 +188,7 @@ export default function TermPage({ params }: { params: Promise<{ id: string }> }
               <ScoreRing value={data.opportunity} label="机会分" />
             </div>
             <div className="mt-6 grid gap-4 sm:grid-cols-2">
-              <Bar label="发现" value={data.discovery} note="越早、跨源越多越高；已上 Google 会打折" />
+              <Bar label="发现" value={data.discovery} note="越早、跨源越多越高；有索引证据时会打折" />
               <Bar label="新近" value={data.newness} note="首次发现越近越高" />
               <Bar label="动量" value={data.momentum} note="最近快照相对前几天" />
               <Bar label="商业" value={data.analysis?.commercialScore ?? 0} note={data.analysis?.commercialNote || "还没做商业判断"} />
@@ -193,7 +200,7 @@ export default function TermPage({ params }: { params: Promise<{ id: string }> }
           </section>
 
           <section className="grid gap-3 md:grid-cols-3">
-            <Info title="搜索校验" body={searchLabel(data.searchStatus)} extra={`${data.searchMethod ? `方法 ${data.searchMethod}。` : ""}${data.searchCheckedAt ? `检查于 ${data.searchCheckedAt}。` : ""}${data.searchNote || "还没有成功的搜索校验，不能写成未收录。"}`} />
+            <Info title="搜索校验" body={searchLabel(data.searchStatus)} extra={`${data.searchMethod ? `方法 ${data.searchMethod}。` : ""}${data.searchCheckedAt ? `检查于 ${data.searchCheckedAt}。` : ""}${data.searchNote || "还没有索引页面证据，不能写成已有收录或未收录。"} 自动补全${data.onSuggest ? "里出现过" : "没有记为出现"}，每日趋势${data.onTrends ? "里出现过" : "没有记为出现"}。这两项是辅助字段，不是索引证据。`} />
             <Info title="竞争" body={`${data.analysis?.competitionLabel || "未检测"}${data.analysis?.serpShape ? ` · ${data.analysis.serpShape}` : ""}`} extra={`${data.analysis?.competitionNote || "这一轮还没拉 SERP。"}${data.analysis?.youngLoosened ? " 年轻词已放宽一档。" : ""}${data.analysis?.kgr != null ? ` KGR ${data.analysis.kgr}。` : ""}${data.analysis?.adsPresent == null ? "" : data.analysis.adsPresent ? " 有广告。" : " 无广告。"}`} />
             <Info title="域名窗口" body={domainLabel(data.analysis?.domainStatus || "unknown")} extra={`${data.analysis?.domain || "未检查"}。${data.analysis?.landNote || ""} ${data.analysis?.lifecycle || "观察中"}。`} />
           </section>

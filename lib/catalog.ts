@@ -20,10 +20,10 @@ export const REGIONS = [
 ] as const;
 
 export const STAGES = [
-  { id: "earliest", label: "最早窗口", hint: "早期社区已出现，Google 还没跟上" },
-  { id: "spreading", label: "多源发酵", hint: "至少两个早期来源在讨论，仍未进入 Google" },
-  { id: "published", label: "内容已公开", hint: "新闻、通讯或竞品页已经写到，搜索框还没补全" },
-  { id: "on_google", label: "已被 Google 收录", hint: "自动补全或每日趋势已出现，窗口偏晚" },
+  { id: "earliest", label: "最早窗口", hint: "目前只在早期社区看到，还没有索引页面证据" },
+  { id: "spreading", label: "多源发酵", hint: "至少两个早期来源在讨论，仍没有索引页面证据" },
+  { id: "published", label: "内容已公开", hint: "新闻、通讯或竞品页已经写到" },
+  { id: "on_google", label: "看到索引证据", hint: "有索引页面证据。自动补全或每日趋势不算收录" },
 ] as const;
 
 export const INTENT_LABEL: Record<string, string> = {

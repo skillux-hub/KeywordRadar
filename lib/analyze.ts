@@ -178,7 +178,7 @@ function heuristicOutline(term: TermRow, related: string[], questions: string[])
       `${term.display} vs the usual alternatives`,
     ],
     sections: [
-      { heading: "这个词为什么早", points: [term.summary || "多个早期来源已经出现，Google 还没把它收成稳定查询。"] },
+      { heading: "讨论里出现了什么", points: [term.summary || "多个早期来源已经出现。这只是讨论记录，不是搜索引擎收录，也不表示我们更早。"] },
       { heading: "人们在问什么", points: questions.length ? questions.slice(0, 4) : ["先回答定义、适用对象和第一步。"] },
       { heading: "比较和选择", points: related.length ? related.slice(0, 4).map((item) => `顺带覆盖相关说法：${item}`) : ["列出 3 个可比较的做法或产品。"] },
       { heading: "怎么写才对上意图", points: [`当前意图偏向「${intent}」。英文标题给搜索结果用，正文把痛点和例子写具体。`] },

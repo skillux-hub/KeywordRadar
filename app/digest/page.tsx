@@ -58,11 +58,11 @@ export default function DigestPage() {
       </div>
 
       <section className="panel mt-5 p-4 text-sm leading-6">
-        <h2 className="font-medium">领先 Google 的时间</h2>
+        <h2 className="font-medium">补全和趋势的后续对照</h2>
         {backtest?.samples ? (
-          <p className="mt-2">已有 {backtest.samples} 个词是先被雷达看见、后来才出现在自动补全或每日趋势里。平均领先 {backtest.avgLeadHours?.toFixed(1)} 小时。早发现加权目前是 {backtest.weights.earlyBonus}。</p>
+          <p className="mt-2">已有 {backtest.samples} 个词后来出现在自动补全或每日趋势里。时间差平均 {backtest.avgLeadHours?.toFixed(1)} 小时。这不是网页已被搜索引擎收录，也不保证我们更早。早发现加权目前是 {backtest.weights.earlyBonus}。</p>
         ) : (
-          <p className="mt-2 text-muted">还没有闭环样本。第一次看见就已经在 Google 上的词不计入领先时间。多跑几轮之后，这里会用平均领先时间微调权重。</p>
+          <p className="mt-2 text-muted">还没有对照样本。自动补全和趋势只作辅助记录，索引证据不足时保持未知。</p>
         )}
       </section>
 
@@ -109,10 +109,10 @@ export default function DigestPage() {
       </section>
 
       <section className="panel mt-4 p-4">
-        <h2 className="font-medium">领先样本</h2>
+        <h2 className="font-medium">后来出现在补全或趋势里的样本</h2>
         <ul className="mt-2 space-y-1 text-sm">
           {backtest?.leads?.items.map((item) => (
-            <li key={item.id}><Link className="text-primary" href={`/terms/${item.id}`}>{item.display}</Link> <span className="text-muted">领先 {Number(item.lead_hours).toFixed(1)} 小时</span></li>
+            <li key={item.id}><Link className="text-primary" href={`/terms/${item.id}`}>{item.display}</Link> <span className="text-muted">时间差 {Number(item.lead_hours).toFixed(1)} 小时</span></li>
           ))}
           {!backtest?.leads?.items.length && <li className="text-muted">还没有样本。</li>}
         </ul>

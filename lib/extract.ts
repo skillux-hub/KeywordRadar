@@ -58,7 +58,7 @@ const BLOCK = new Set([
 ]);
 
 const INDUSTRY_RULES: [string, RegExp][] = [
-  ["ai", /\b(ai|llm|gpt|chatgpt|claude|gemini|openai|anthropic|machine learning|neural|rag|agentic|copilot|diffusion)\b/i],
+  ["ai", /\b(llm|gpt|chatgpt|claude|gemini|openai|anthropic|machine learning|neural|rag|agentic|copilot|diffusion|ai agent|ai tool|ai coding)\b/i],
   ["crypto", /\b(crypto|bitcoin|ethereum|solana|defi|nft|blockchain|web3|tokenomics)\b/i],
   ["ecommerce", /\b(ecommerce|e-commerce|shopify|dtc|d2c|amazon seller|sku|checkout|storefront)\b/i],
   ["marketing", /\b(seo|sem|ppc|backlink|keyword research|content marketing|newsletter growth|search console)\b/i],

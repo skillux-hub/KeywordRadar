@@ -29,7 +29,10 @@ export type AgeEvidence = {
 export type NoveltyStatus = "novel" | "established" | "unverified";
 
 export function normalizeNoveltyName(raw: string) {
-  return raw
+  const folded = raw
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2");
+  return folded
     .toLowerCase()
     .replace(/['’]/g, "")
     .replace(/[^\p{L}\p{N}]+/gu, " ")
@@ -37,11 +40,56 @@ export function normalizeNoveltyName(raw: string) {
     .replace(/\s+/g, " ");
 }
 
+// Folded names of long-lived products, publishers, and generic compounds.
+// Matching is by the whole alias, not by a single word such as "claude".
+const ALIASES: { label: string; tokens: string[] }[] = [
+  { label: "Claude Code", tokens: ["claude", "code"] },
+  { label: "Claude AI", tokens: ["claude", "ai"] },
+  { label: "GitHub Copilot", tokens: ["github", "copilot"] },
+  { label: "Cursor AI", tokens: ["cursor", "ai"] },
+  { label: "CrowdStrike", tokens: ["crowd", "strike"] },
+  { label: "DeepSeek", tokens: ["deep", "seek"] },
+  { label: "DevOps", tokens: ["dev", "ops"] },
+  { label: "TechCrunch", tokens: ["tech", "crunch"] },
+  { label: "PostgreSQL", tokens: ["postgre", "sql"] },
+  { label: "PostgreSQL", tokens: ["postgres"] },
+  { label: "McKinsey", tokens: ["mc", "kinsey"] },
+  { label: "VentureBeat", tokens: ["venture", "beat"] },
+  { label: "Cloud Computing", tokens: ["cloud", "computing"] },
+  { label: "Open Source", tokens: ["open", "source"] },
+  { label: "FinTech", tokens: ["fin", "tech"] },
+];
+
+export function baselineRelation(raw: string): { relation: "exact" | "embedded" | "none"; label: string } {
+  const tokens = normalizeNoveltyName(raw).split(" ").filter(Boolean);
+  const compact = tokens.join("");
+  for (const alias of ALIASES) {
+    const aliasCompact = alias.tokens.join("");
+    const exactTokens =
+      tokens.length >= alias.tokens.length &&
+      alias.tokens.every((part, index) => tokens[index] === part) &&
+      tokens.slice(alias.tokens.length).every(editionToken);
+    const rest = compact.startsWith(aliasCompact) ? compact.slice(aliasCompact.length) : null;
+    const exactCompact = compact === aliasCompact || (rest != null && /^\d+(?:\.\d+)*$/.test(rest));
+    if (exactTokens || exactCompact) return { relation: "exact", label: alias.label };
+  }
+  for (const alias of ALIASES) {
+    if (alias.tokens.length < 2) continue;
+    const aliasCompact = alias.tokens.join("");
+    for (let index = 0; index < tokens.length; index += 1) {
+      const span = alias.tokens.every((part, offset) => tokens[index + offset] === part);
+      if (span || tokens[index] === aliasCompact) return { relation: "embedded", label: alias.label };
+    }
+  }
+  return { relation: "none", label: "" };
+}
+
 function editionToken(token: string) {
   return EDITION.has(token) || /^\d+(?:\.\d+)*$/.test(token) || /^(19|20)\d{2}$/.test(token);
 }
 
 export function isEstablishedName(raw: string) {
+  if (baselineRelation(raw).relation === "exact") return true;
   const tokens = normalizeNoveltyName(raw).split(" ").filter(Boolean);
   if (!tokens.length) return false;
   const compact = tokens.join("");
@@ -58,10 +106,19 @@ export function isEstablishedName(raw: string) {
 }
 
 export function judgeNovelty(term: string, evidence: AgeEvidence[] = [], now = Date.now()) {
-  if (isEstablishedName(term)) {
+  const baseline = baselineRelation(term);
+  if (baseline.relation === "exact" || isEstablishedName(term)) {
     return {
       status: "established" as NoveltyStatus,
-      reason: "这是已知的长期产品、平台或版本。大小写、空格和重新变热都不能把它变成新词。",
+      reason: baseline.relation === "exact"
+        ? `这是已知实体「${baseline.label}」的名称或别名。空格、大小写、符号和驼峰都算同一个词，新域名或新仓库也不能把它重新放行。`
+        : "这是已知的长期产品、平台或版本。大小写、空格和重新变热都不能把它变成新词。",
+    };
+  }
+  if (baseline.relation === "embedded") {
+    return {
+      status: "unverified" as NoveltyStatus,
+      reason: `短语里包含已知实体「${baseline.label}」的完整别名。组合本身没有独立诞生证据，不能当成新词。`,
     };
   }
   const windowMs = NOVEL_WINDOW_DAYS * 86400000;
@@ -227,6 +284,47 @@ export function groupsInsideWindow(groups: SourceGroup[], windowHours: number) {
   return best;
 }
 
+export function confirmationWindow(sightings: Sighting[], windowHours: number) {
+  const timed = sightings
+    .map((item) => ({ item, time: Date.parse(item.at || "") }))
+    .filter((item) => Number.isFinite(item.time))
+    .sort((a, b) => a.time - b.time);
+  let bestGroups: SourceGroup[] = [];
+  let bestStart: number | null = null;
+  let bestEnd: number | null = null;
+  for (let index = 0; index < timed.length; index += 1) {
+    const start = timed[index].time;
+    const slice: Sighting[] = [];
+    let end = start;
+    for (let next = index; next < timed.length; next += 1) {
+      if (timed[next].time - start > windowHours * 3600000) break;
+      slice.push(timed[next].item);
+      end = timed[next].time;
+    }
+    const groups = groupSightings(slice);
+    const span = end - start;
+    const bestSpan = bestStart == null || bestEnd == null ? Number.POSITIVE_INFINITY : bestEnd - bestStart;
+    if (groups.length > bestGroups.length || (groups.length === bestGroups.length && groups.length > 0 && span < bestSpan)) {
+      bestGroups = groups;
+      bestStart = start;
+      bestEnd = end;
+    }
+  }
+  return {
+    groups: bestGroups,
+    windowHours,
+    windowStart: bestStart == null ? null : new Date(bestStart).toISOString(),
+    windowEnd: bestEnd == null ? null : new Date(bestEnd).toISOString(),
+  };
+}
+
+function youngEvidence(evidence: AgeEvidence[], now: number) {
+  return evidence.some((item) => {
+    const time = item.at ? Date.parse(item.at) : NaN;
+    return Number.isFinite(time) && now - time <= 180 * 86400000 && now - time >= 0;
+  });
+}
+
 export function judgeBirth(input: {
   term: string;
   industries: string[];
@@ -238,59 +336,72 @@ export function judgeBirth(input: {
   const now = input.now ?? Date.now();
   const windowHours = input.windowHours ?? confirmWindowHours();
   const excluded = judgeNovelty(input.term, input.ageEvidence ?? [], now);
+  const baseline = baselineRelation(input.term);
   const focus = input.industries.filter((industry) => (FOCUS_INDUSTRIES as readonly string[]).includes(industry));
-  if (excluded.status === "established") {
-    return { status: "established" as NoveltyStatus, reason: excluded.reason, industry: focus[0] || "", independent: 0, groups: [] as SourceGroup[] };
+  let chosen = focus[0] || "";
+  let counted = confirmationWindow([], windowHours);
+  for (const industry of focus) {
+    const scoped = input.sightings.filter((item) => item.industry === industry);
+    const window = confirmationWindow(scoped, windowHours);
+    if (window.groups.length > counted.groups.length) {
+      chosen = industry;
+      counted = window;
+    }
   }
-  const auxiliary = (input.ageEvidence ?? []).some((item) => {
-    const time = item.at ? Date.parse(item.at) : NaN;
-    return Number.isFinite(time) && now - time <= 180 * 86400000 && now - time >= 0;
-  });
+  const windowFields = {
+    industry: chosen,
+    independent: counted.groups.length,
+    groups: counted.groups,
+    windowHours,
+    windowStart: counted.windowStart,
+    windowEnd: counted.windowEnd,
+  };
+  if (excluded.status === "established" || baseline.relation === "exact") {
+    return {
+      status: "established" as NoveltyStatus,
+      reason: `${excluded.reason} 窗口内的讨论组只说明有人提到它，不能代替历史排除。`,
+      ...windowFields,
+    };
+  }
+  if (baseline.relation === "embedded") {
+    return {
+      status: "unverified" as NoveltyStatus,
+      reason: `${excluded.reason} 两组讨论、新域名或新仓库都不能把含有该实体的组合短语放行。`,
+      ...windowFields,
+    };
+  }
   if (!focus.length) {
     return {
       status: "unverified" as NoveltyStatus,
-      reason: "不在当前聚焦的 AI 工具或开发者工具基线里。其它行业的记录仍保留，但不进入正式推荐。",
+      reason: "名称本身对不上 AI 工具或开发者工具基线。采集来源上的行业标签不会拿来凑准入，其它行业记录仍保留。",
       industry: "",
       independent: 0,
       groups: [] as SourceGroup[],
+      windowHours,
+      windowStart: null,
+      windowEnd: null,
     };
   }
-  let chosen = focus[0];
-  let chosenGroups: SourceGroup[] = [];
-  for (const industry of focus) {
-    const scoped = input.sightings.filter((item) => item.industry === industry);
-    const inside = groupsInsideWindow(groupSightings(scoped), windowHours);
-    if (inside.length > chosenGroups.length) {
-      chosen = industry;
-      chosenGroups = inside;
-    }
-  }
-  const auxiliaryNote = auxiliary ? " 新域名、新仓库或新品上架只作为辅助，不能单独放行。" : "";
-  if (chosenGroups.length >= 2) {
-    const labels = chosenGroups.map((group) => group.sources.join("+") || "未知来源").join("、");
+  const young = youngEvidence(input.ageEvidence ?? [], now);
+  const span = counted.windowStart && counted.windowEnd ? Date.parse(counted.windowEnd) - Date.parse(counted.windowStart) : 0;
+  const spanHours = Math.max(0, Math.round(span / 3600000));
+  const windowNote = counted.groups.length
+    ? `计数窗口 ${windowHours} 小时，实际从 ${counted.windowStart} 到 ${counted.windowEnd}，跨 ${spanHours} 小时，计入 ${counted.groups.length} 组。只计这个子窗口里的来源，不把更早或更晚的讨论算进去。`
+    : `没有落在 ${windowHours} 小时子窗口里的可分组来源。`;
+  if (young && counted.groups.length >= 2) {
     return {
       status: "novel" as NoveltyStatus,
-      reason: `${chosen} 基线内，${windowHours} 小时里有 ${chosenGroups.length} 组可分开的来源（${labels}）。分组只依据链接、标题和发起人，不能保证识别出所有同一运营者。${auxiliaryNote}`,
-      industry: chosen,
-      independent: chosenGroups.length,
-      groups: chosenGroups,
+      reason: `${chosen} 基线内同时满足三项：观察到的年轻诞生记录、没有更早的历史排除、以及窗口内 ${counted.groups.length} 组可分开来源。${windowNote} 分组只依据链接、标题和发起人，不能保证识别出所有同一运营者。诞生记录来自已采到的仓库、域名或发布日，不是编造的发布时间。`,
+      ...windowFields,
     };
   }
-  if (chosenGroups.length === 1) {
-    return {
-      status: "unverified" as NoveltyStatus,
-      reason: `目前只有 1 组来源，留待观察，不进入正式推荐。${auxiliaryNote}`,
-      industry: chosen,
-      independent: 1,
-      groups: chosenGroups,
-    };
-  }
+  const missingBirth = counted.groups.length >= 2
+    ? "窗口内的讨论组只证明有人在谈，没有独立诞生证据，不能进入推荐。"
+    : "窗口内独立来源不足，而且也不能用缺历史记录来证明它是新词。";
   return {
     status: "unverified" as NoveltyStatus,
-    reason: `没有落在 ${windowHours} 小时窗口内、且能分开的两组来源。缺历史记录不能当成新词证明。${auxiliaryNote}`,
-    industry: chosen,
-    independent: 0,
-    groups: [],
+    reason: `${missingBirth}${young ? " 已有年轻域名或仓库记录，但单独不够，还要和历史排除、窗口内两组一起满足。" : " 缺独立诞生证据时一律待验证。"} ${windowNote}`,
+    ...windowFields,
   };
 }
 
@@ -302,18 +413,17 @@ export function judgeSearch(input: {
   dataForSeoConfigured?: boolean;
   dataForSeo?: "indexed" | "absent" | "error" | null;
 }) {
-  if (input.suggest === true) return { status: "indexed" as SearchStatus, method: "google-suggest", note: "Google 自动补全这次写出了这个词。这只是滞后校验，不是发现来源。" };
-  if (input.trends === true) return { status: "indexed" as SearchStatus, method: "google-trends-rss", note: "Google 每日趋势这次出现了这个词。这只是滞后校验，不是发现来源。" };
-  if (input.dataForSeo === "indexed") return { status: "indexed" as SearchStatus, method: "dataforseo", note: "DataForSEO 这次看到了收录。这只是滞后校验。" };
-  if (input.dataForSeo === "error" || (input.dataForSeoConfigured === false && input.suggest == null && input.trends == null)) {
-    return { status: "unknown" as SearchStatus, method: input.dataForSeo === "error" ? "dataforseo" : "", note: "没有成功的搜索校验。未配置 DataForSEO 或请求失败时必须标为未知，不能写成未收录。" };
+  const auxiliary = [input.suggest === true ? "google-suggest" : "", input.trends === true ? "google-trends-rss" : ""].filter(Boolean);
+  const aux = auxiliary.length ? `辅助信号：${auxiliary.join("、")}。自动补全或趋势出现不等于网页已被搜索引擎收录。` : "";
+  if (input.dataForSeo === "indexed") {
+    return { status: "indexed" as SearchStatus, method: "dataforseo", note: `索引检查看到了页面证据。${aux}` };
   }
-  if (input.suggest == null && input.trends == null && input.dataForSeo == null) {
-    return { status: "unknown" as SearchStatus, method: "", note: "还没有成功做过搜索校验，不能写成未收录。" };
+  if (input.dataForSeo === "absent") {
+    return { status: "absent" as SearchStatus, method: "dataforseo", note: `索引检查没有检出页面。未检出不等于未收录，也不表示早于搜索引擎。${aux}` };
   }
-  if (input.suggest === false || input.trends === false || input.dataForSeo === "absent") {
-    const method = input.suggest === false ? "google-suggest" : input.trends === false ? "google-trends-rss" : "dataforseo";
-    return { status: "absent" as SearchStatus, method, note: "这次查询没有检出该词。未检出不等于搜索引擎未收录，也不能说明我们更早。" };
-  }
-  return { status: "unknown" as SearchStatus, method: "", note: "搜索校验结果不完整，保持未知。" };
+  return {
+    status: "unknown" as SearchStatus,
+    method: auxiliary.join("+"),
+    note: `${aux}${input.dataForSeo === "error" ? "索引检查失败。" : ""}没有索引页面证据，状态保持未知，不能写成已有收录或未收录。`,
+  };
 }

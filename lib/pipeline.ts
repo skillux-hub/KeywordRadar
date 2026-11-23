@@ -124,8 +124,7 @@ function persist(collector: CollectorResult, runId: number) {
     row.count += 1;
     row.engagement += hit.engagement ?? 0;
     row.always = row.always || Boolean(hit.always);
-    if (hit.industry) row.industries.add(hit.industry);
-    for (const industry of classifyIndustries(`${hit.term} ${hit.title ?? ""}`)) row.industries.add(industry);
+    for (const industry of classifyIndustries(hit.term)) row.industries.add(industry);
     if (hit.seedId) row.seeds.add(hit.seedId);
     if ((hit.term.match(/[A-Z]/g)?.length ?? 0) > (row.display.match(/[A-Z]/g)?.length ?? 0)) row.display = hit.term;
     if (row.evidence.length < 5 && (hit.quote || hit.url)) row.evidence.push(hit);
