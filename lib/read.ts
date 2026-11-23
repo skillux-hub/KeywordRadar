@@ -12,7 +12,7 @@ export type Filters = {
   seed?: string;
   q?: string;
   shape?: string;
-  view?: "recommend" | "pending";
+  view?: "recommend" | "pending" | "raw";
   noise?: "hide" | "all";
 };
 
@@ -61,7 +61,9 @@ function keywordWhere(filters: Filters) {
     sql += " and (t.normalized like ? or t.display like ?)";
     params.push(`%${filters.q.toLowerCase()}%`, `%${filters.q}%`);
   }
-  sql += filters.view === "pending" ? " and t.novelty = 'unverified'" : " and t.novelty = 'novel'";
+  if (filters.view === "raw") sql += " and t.novelty = 'unverified' and ifnull(t.review_lane, 'raw') = 'raw'";
+  else if (filters.view === "pending") sql += " and t.novelty = 'unverified' and t.review_lane = 'candidate'";
+  else sql += " and t.novelty = 'novel'";
   if (filters.noise === "hide") {
     sql += " and t.normalized not like '%privacy policy%' and t.normalized not like '%cookie policy%' and t.normalized not like '%cookie settings%' and t.normalized not like '%terms of service%'";
   }

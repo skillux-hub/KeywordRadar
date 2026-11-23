@@ -66,13 +66,16 @@ type Status = {
 
 type Filters = { industry: string; source: string; stage: string; window: string; seed: string; q: string; shape: string };
 
-export function Dashboard({ initial }: { initial?: { items: Keyword[]; total: number; summary: { total: number }; pending: Keyword[]; pendingTotal: number; status: Status; seeds: Seed[] } }) {
+export function Dashboard({ initial }: { initial?: { items: Keyword[]; total: number; summary: { total: number }; pending: Keyword[]; pendingTotal: number; rawTotal: number; status: Status; seeds: Seed[] } }) {
   const [meta, setMeta] = useState<Meta | null>(null);
   const [seeds, setSeeds] = useState<Seed[]>(initial?.seeds ?? []);
   const [status, setStatus] = useState<Status | null>(initial?.status ?? null);
   const [items, setItems] = useState<Keyword[]>(initial?.items ?? []);
   const [pending, setPending] = useState<Keyword[]>(initial?.pending ?? []);
   const [pendingTotal, setPendingTotal] = useState(initial?.pendingTotal ?? 0);
+  const [rawTotal, setRawTotal] = useState(initial?.rawTotal ?? 0);
+  const [rawItems, setRawItems] = useState<Keyword[]>([]);
+  const [showRaw, setShowRaw] = useState(false);
   const [summary, setSummary] = useState(initial?.summary ?? { total: 0 });
   const [loaded, setLoaded] = useState(Boolean(initial));
   const [error, setError] = useState("");
@@ -188,6 +191,22 @@ export function Dashboard({ initial }: { initial?: { items: Keyword[]; total: nu
     };
   }, [query, page, size, pendingPage, status?.running]);
 
+  useEffect(() => {
+    if (!showRaw) return;
+    let stop = false;
+    fetch(`/api/keywords?view=raw&page=1&size=${size}`)
+      .then(async (res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (stop || !data) return;
+        setRawItems(data.items || []);
+        setRawTotal(Number(data.total || 0));
+      })
+      .catch(() => undefined);
+    return () => {
+      stop = true;
+    };
+  }, [showRaw, size]);
+
   async function refresh() {
     setError("");
     const res = await fetch("/api/refresh", { method: "POST" });
@@ -284,6 +303,7 @@ export function Dashboard({ initial }: { initial?: { items: Keyword[]; total: nu
         </div>
       )}
 
+      <h2 className="mb-2 text-lg font-semibold">正式推荐 <span className="text-sm font-normal text-muted">{loaded ? total : "—"}</span></h2>
       {!loaded && <SkeletonTable />}
       {loaded && !items.length && (
         <div className="panel px-5 py-16 text-center">
@@ -357,19 +377,36 @@ export function Dashboard({ initial }: { initial?: { items: Keyword[]; total: nu
       )}
       <Pagination page={page} size={size} total={total} />
       <section className="mt-6">
-        <h2 className="text-lg font-semibold">待验证</h2>
-        <p className="mt-1 text-sm text-muted">这些候选留着观察，不是正式推荐。隐私政策、cookie 和条款页默认不排进这个队列，原始记录仍在库里。</p>
+        <h2 className="text-lg font-semibold">待核候选 <span className="text-sm font-normal text-muted">{loaded ? pendingTotal : "—"}</span></h2>
+        <p className="mt-1 text-sm text-muted">只放有自己的发布、仓库或产品页、但还缺诞生证据或行业结论的名字。不是正式推荐。标签串、综述提及、导航页和已知数据库或平台不在这里。</p>
         <ul className="mt-3 space-y-2">
           {pending.map((item) => (
             <li key={item.id} className="panel px-4 py-3">
               <Link href={`/terms/${item.id}`} className="font-medium hover:text-primary">{item.term}</Link>
-              <p className="mt-1 text-sm text-muted">{item.noveltyReason || "待验证"}</p>
+              <p className="mt-1 text-xs text-faint">{item.sourceLabels?.join("、") || "来源未标"}</p>
+              <p className="mt-1 text-sm text-muted">{item.noveltyReason || "待核"}</p>
             </li>
           ))}
           {!loaded && <li className="text-sm text-muted">正在读取待验证，不是 0 条。</li>}
-          {loaded && !pending.length && <li className="text-sm text-muted">这一页没有待验证候选。</li>}
+          {loaded && !pending.length && <li className="text-sm text-muted">待核候选这一页是空的。原始记录还有 {rawTotal} 条，默认不铺在首页。</li>}
         </ul>
         <Pagination page={pendingPage} size={size} total={pendingTotal} pageParam="pendingPage" />
+        <div className="mt-4">
+          <button type="button" className="text-sm text-primary" onClick={() => setShowRaw((value) => !value)}>
+            原始记录 {loaded ? rawTotal : "—"} 条。默认不展开。
+          </button>
+          {showRaw && (
+            <ul className="mt-3 space-y-2">
+              {rawItems.map((item) => (
+                <li key={item.id} className="panel px-4 py-3">
+                  <Link href={`/terms/${item.id}`} className="font-medium hover:text-primary">{item.term}</Link>
+                  <p className="mt-1 text-sm text-muted">{item.noveltyReason}</p>
+                </li>
+              ))}
+              {!rawItems.length && <li className="text-sm text-muted">正在读取原始记录，不是 0 条。</li>}
+            </ul>
+          )}
+        </div>
       </section>
     </Shell>
   );

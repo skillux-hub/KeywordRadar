@@ -42,7 +42,7 @@ export function normalizeNoveltyName(raw: string) {
 
 // Folded names of long-lived products, publishers, and generic compounds.
 // Matching is by the whole alias, not by a single word such as "claude".
-const ALIASES: { label: string; tokens: string[] }[] = [
+const ALIASES: { label: string; tokens: string[]; note?: string }[] = [
   { label: "Claude Code", tokens: ["claude", "code"] },
   { label: "Claude AI", tokens: ["claude", "ai"] },
   { label: "GitHub Copilot", tokens: ["github", "copilot"] },
@@ -58,9 +58,37 @@ const ALIASES: { label: string; tokens: string[] }[] = [
   { label: "Cloud Computing", tokens: ["cloud", "computing"] },
   { label: "Open Source", tokens: ["open", "source"] },
   { label: "FinTech", tokens: ["fin", "tech"] },
+  { label: "MySQL", tokens: ["mysql"], note: "长期数据库。基线按名称整体匹配，不是只挡这一个词。" },
+  { label: "MariaDB", tokens: ["mariadb"], note: "长期数据库。" },
+  { label: "SQLite", tokens: ["sqlite"], note: "长期数据库。" },
+  { label: "MongoDB", tokens: ["mongodb"], note: "长期数据库。" },
+  { label: "Redis", tokens: ["redis"], note: "长期数据库。" },
+  { label: "Elasticsearch", tokens: ["elasticsearch"], note: "长期搜索引擎。" },
+  { label: "Stack Overflow", tokens: ["stack", "overflow"], note: "长期开发者平台。" },
+  { label: "Stack Overflow", tokens: ["stackoverflow"], note: "长期开发者平台。" },
+  { label: "LinkedIn", tokens: ["linkedin"], note: "长期职业平台。" },
+  { label: "ClickUp", tokens: ["clickup"], note: "长期协作产品。" },
+  { label: "OpenStreetMap", tokens: ["openstreetmap"], note: "长期地图平台。" },
+  { label: "ElastiCache", tokens: ["elasticache"], note: "长期云数据库服务。" },
+  { label: "WebSockets", tokens: ["websockets"], note: "长期网络协议名。" },
+  { label: "WebSocket", tokens: ["websocket"], note: "长期网络协议名。" },
 ];
 
-export function baselineRelation(raw: string): { relation: "exact" | "embedded" | "none"; label: string } {
+const ANCHORED = [
+  { label: "OpenCode", name: "opencode", paths: ["github.com/anomalyco/opencode", "github.com/opencode-ai/opencode"], note: "证据 URL 对上 github.com/anomalyco/opencode（2025-04-30 创建）或 github.com/opencode-ai/opencode（2025-03-16 创建）。没对上这些地址时，不把同名提及判成旧项目。" },
+  { label: "OpenClaw", name: "openclaw", paths: ["github.com/openclaw/openclaw"], note: "证据 URL 对上 github.com/openclaw/openclaw（2025-11-24 创建）。没对上这个仓库时，不把综述里的提及判成旧项目。" },
+];
+
+export function knownProjectByUrl(term: string, urls: string[]) {
+  const compact = normalizeNoveltyName(term).replace(/ /g, "");
+  const hit = ANCHORED.find((item) => item.name === compact);
+  if (!hit) return null;
+  const matched = urls.find((url) => hit.paths.some((path) => url.toLowerCase().includes(path)));
+  if (!matched) return null;
+  return { label: hit.label, url: matched, note: hit.note };
+}
+
+export function baselineRelation(raw: string): { relation: "exact" | "embedded" | "none"; label: string; note: string } {
   const tokens = normalizeNoveltyName(raw).split(" ").filter(Boolean);
   const compact = tokens.join("");
   for (const alias of ALIASES) {
@@ -71,17 +99,17 @@ export function baselineRelation(raw: string): { relation: "exact" | "embedded" 
       tokens.slice(alias.tokens.length).every(editionToken);
     const rest = compact.startsWith(aliasCompact) ? compact.slice(aliasCompact.length) : null;
     const exactCompact = compact === aliasCompact || (rest != null && /^\d+(?:\.\d+)*$/.test(rest));
-    if (exactTokens || exactCompact) return { relation: "exact", label: alias.label };
+    if (exactTokens || exactCompact) return { relation: "exact", label: alias.label, note: alias.note || "" };
   }
   for (const alias of ALIASES) {
     if (alias.tokens.length < 2) continue;
     const aliasCompact = alias.tokens.join("");
     for (let index = 0; index < tokens.length; index += 1) {
       const span = alias.tokens.every((part, offset) => tokens[index + offset] === part);
-      if (span || tokens[index] === aliasCompact) return { relation: "embedded", label: alias.label };
+      if (span || tokens[index] === aliasCompact) return { relation: "embedded", label: alias.label, note: alias.note || "" };
     }
   }
-  return { relation: "none", label: "" };
+  return { relation: "none", label: "", note: "" };
 }
 
 function editionToken(token: string) {
@@ -111,7 +139,7 @@ export function judgeNovelty(term: string, evidence: AgeEvidence[] = [], now = D
     return {
       status: "established" as NoveltyStatus,
       reason: baseline.relation === "exact"
-        ? `这是已知实体「${baseline.label}」的名称或别名。空格、大小写、符号和驼峰都算同一个词，新域名或新仓库也不能把它重新放行。`
+        ? `这是已知实体「${baseline.label}」。${baseline.note ? `${baseline.note}` : "空格、大小写、符号和驼峰都算同一个词。"}新域名、新帖或新仓库镜像不能把它重新放行。`
         : "这是已知的长期产品、平台或版本。大小写、空格和重新变热都不能把它变成新词。",
     };
   }
@@ -406,6 +434,49 @@ export function judgeBirth(input: {
 }
 
 export type SearchStatus = "unknown" | "absent" | "indexed";
+
+export function reviewLane(term: string, rows: { kind?: string | null; title?: string | null; url?: string | null }[]) {
+  const baseline = baselineRelation(term);
+  if (baseline.relation === "exact") return { lane: "raw" as const, reason: "名称已由基线排除，不会进待核候选。" };
+  if (baseline.relation === "embedded") {
+    return { lane: "raw" as const, reason: `短语包含已知实体「${baseline.label}」，但没有这个组合自己的发布绑定。先留在原始记录，不把它写成已知旧词，也不进入待核候选。` };
+  }
+  if (/\b(privacy policy|cookie policy|terms of service|cookie settings)\b/i.test(term)) {
+    return { lane: "raw" as const, reason: "导航或法律页用语。原始记录保留，不进入待核候选。" };
+  }
+  const bound = rows.some((row) => boundToTerm(term, row));
+  if (!bound) {
+    return { lane: "raw" as const, reason: "没有绑定到它自己的发布、仓库或产品页。标签串、综述和其它标题里的顺带提及只留在原始记录。这不是已知旧词结论。" };
+  }
+  return { lane: "candidate" as const, reason: "" };
+}
+
+function mentionHost(url: string) {
+  try {
+    const host = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
+    if (host.endsWith(".substack.com") || host === "substack.com") return true;
+    return ["bsky.app", "news.google.com", "reddit.com", "news.ycombinator.com", "medium.com", "stackoverflow.com", "youtube.com", "youtu.be", "x.com", "twitter.com"].includes(host);
+  } catch {
+    return true;
+  }
+}
+
+function boundToTerm(term: string, row: { kind?: string | null; title?: string | null; url?: string | null }) {
+  if (row.kind === "hashtag" || !row.url || mentionHost(row.url)) return false;
+  const name = normalizeNoveltyName(term);
+  const title = normalizeNoveltyName(row.title || "");
+  if (!name) return false;
+  if (row.kind === "entity") return true;
+  if (title === name || title.startsWith(`${name} `) || title.startsWith(`show hn ${name}`)) return true;
+  const compact = name.replace(/ /g, "");
+  if (compact.length < 4) return false;
+  try {
+    const segments = new URL(row.url).pathname.toLowerCase().split("/").filter(Boolean);
+    return segments.some((segment) => segment.replace(/[-_]/g, "") === compact);
+  } catch {
+    return false;
+  }
+}
 
 export function judgeSearch(input: {
   suggest: boolean | null;

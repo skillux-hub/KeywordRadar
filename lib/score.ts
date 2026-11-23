@@ -1,7 +1,7 @@
 import { SOURCE_LABEL } from "./catalog";
 import { all, get, num, run } from "./db";
 import { detectIntent, industriesFromEvidence, isNoiseTerm, normalize, painNote } from "./extract";
-import { judgeBirth, type Sighting } from "./novelty";
+import { judgeBirth, knownProjectByUrl, reviewLane, type Sighting } from "./novelty";
 import { type AgeEvidence } from "./novelty";
 import { redditSpreadBoost } from "./sources/metrics";
 import { clamp } from "./utils";
@@ -161,7 +161,7 @@ export function scoreAll() {
     const verdict = birthVerdict(term.id, term.display, obs.map((row) => row.industry).filter((item): item is string => Boolean(item)), now);
     const lastSeen = obs.map((row) => row.collected_at).sort().at(-1) ?? new Date(now).toISOString();
     run(
-      `update terms set stage=?, discovery_score=?, opportunity_score=?, momentum_score=?, newness_score=?, intent=?, summary=?, influencer_count=?, spark_json=?, last_seen_at=?, novelty=?, novelty_reason=?, independent_sources=?, focus_industry=?, source_groups=? where id=?`,
+      `update terms set stage=?, discovery_score=?, opportunity_score=?, momentum_score=?, newness_score=?, intent=?, summary=?, influencer_count=?, spark_json=?, last_seen_at=?, novelty=?, novelty_reason=?, independent_sources=?, focus_industry=?, source_groups=?, review_lane=? where id=?`,
       stage,
       Number(discovery.toFixed(1)),
       Number(opportunity.toFixed(1)),
@@ -177,6 +177,7 @@ export function scoreAll() {
       verdict.independent,
       verdict.industry,
       JSON.stringify({ windowHours: verdict.windowHours, windowStart: verdict.windowStart, windowEnd: verdict.windowEnd, groups: verdict.groups }),
+      verdict.lane,
       term.id,
     );
     for (const source of sources) run("insert or ignore into term_sources (term_id, source) values (?, ?)", term.id, source);
@@ -234,7 +235,16 @@ export function birthVerdict(termId: number, display: string, _industries: strin
     industry: row.industry,
     at: row.published_at || row.collected_at,
   }));
-  return judgeBirth({ term: display, industries: industriesFromEvidence(evidenceRows), sightings, ageEvidence: ageEvidenceFor(termId), now });
+  const anchored = knownProjectByUrl(display, evidenceRows.map((row) => row.url || "").filter(Boolean));
+  const verdict = anchored
+    ? { status: "established" as const, reason: `这是已知项目「${anchored.label}」。${anchored.note} 证据地址 ${anchored.url}。新帖或新镜像仓库不能当成诞生。`, industry: "", independent: 0, groups: [] as ReturnType<typeof judgeBirth>["groups"], windowHours: 48, windowStart: null, windowEnd: null }
+    : judgeBirth({ term: display, industries: industriesFromEvidence(evidenceRows), sightings, ageEvidence: ageEvidenceFor(termId), now });
+  const lane = verdict.status === "unverified" ? reviewLane(display, evidenceRows) : { lane: "", reason: "" };
+  return {
+    ...verdict,
+    reason: verdict.status === "unverified" && lane.lane === "raw" && lane.reason ? `${verdict.reason} ${lane.reason}` : verdict.reason,
+    lane: lane.lane,
+  };
 }
 
 export function ageEvidenceFor(termId: number): AgeEvidence[] {
@@ -275,7 +285,7 @@ export function reclassifyNovelty(now = Date.now()) {
       stage = sources >= 2 ? "spreading" : "earliest";
     }
     run(
-      "update terms set novelty = ?, novelty_reason = ?, independent_sources = ?, focus_industry = ?, source_groups = ?, stage = ?, search_status = coalesce(?, search_status), search_note = coalesce(?, search_note) where id = ?",
+      "update terms set novelty = ?, novelty_reason = ?, independent_sources = ?, focus_industry = ?, source_groups = ?, stage = ?, search_status = coalesce(?, search_status), search_note = coalesce(?, search_note), review_lane = ? where id = ?",
       verdict.status,
       verdict.reason,
       verdict.independent,
@@ -284,6 +294,7 @@ export function reclassifyNovelty(now = Date.now()) {
       stage,
       searchStatus,
       searchNote,
+      verdict.lane,
       term.id,
     );
   }

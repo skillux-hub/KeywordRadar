@@ -16,7 +16,7 @@ export function GET(request: Request) {
     seed: url.searchParams.get("seed") || undefined,
     q: url.searchParams.get("q") || undefined,
     shape: url.searchParams.get("shape") || undefined,
-    view: url.searchParams.get("view") === "pending" ? "pending" : "recommend",
+    view: url.searchParams.get("view") === "raw" ? "raw" : url.searchParams.get("view") === "pending" ? "pending" : "recommend",
     noise: url.searchParams.get("noise") === "hide" ? "hide" : "all",
     page: parsePage(url.searchParams.get("page")),
     size: parseSize(url.searchParams.get("size")),

@@ -349,6 +349,7 @@ function migrate(db: DatabaseSync) {
   ensureColumn(db, "terms", "search_method", "TEXT");
   ensureColumn(db, "terms", "search_note", "TEXT");
   ensureColumn(db, "terms", "search_checked_at", "TEXT");
+  ensureColumn(db, "terms", "review_lane", "TEXT");
   ensureColumn(db, "term_analysis", "serp_shape", "TEXT");
   ensureColumn(db, "term_analysis", "platform_share", "REAL");
   ensureColumn(db, "term_analysis", "young_loosened", "INTEGER");
