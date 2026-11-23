@@ -13,10 +13,10 @@ import { collectNpm, collectPypi } from "./collectors/registry";
 import { collectSitemaps } from "./collectors/sitemap";
 import { result, withTimeout, type CollectContext, type CollectorResult, type Hit, type Suggestion } from "./collectors/types";
 import { collectX } from "./collectors/x";
-import { commitCursor } from "./baseline";
+import { commitCursor, readCursor } from "./baseline";
 import { discoveryDue, runDiscovery } from "./sources/discover";
 import { judgeSearch } from "./novelty";
-import { parseProbe, type ProbeSource } from "./probe";
+import { budgetItems, parseProbe, type ProbeSource } from "./probe";
 
 const lock = globalThis as unknown as { __radarLock?: boolean };
 
@@ -397,9 +397,12 @@ export async function runProbe(body: unknown) {
     }
     return { http: 200, ok: false, mode: parsed.dryRun ? "dry-run" : "persist", source: parsed.source, status: "error", message, fetched: 0, inserted: 0, deduped: 0, cursorAdvanced: false, persisted: false };
   }
-  const fetched = collector.stats?.fetched ?? collector.hits.length;
+  const seen = readCursor(parsed.source === "showhn" ? "hn" : parsed.source).seen;
+  const budgeted = applyProbeBudget(collector, parsed.maxItems, seen);
+  collector = budgeted.collector;
+  const fetched = collector.stats?.fetched ?? budgeted.fetched;
   const deduped = collector.stats?.deduped ?? 0;
-  const emitted = collector.stats?.emitted ?? collector.hits.length;
+  const emitted = budgeted.itemCount;
   if (parsed.dryRun || collector.status === "error") {
     if (!parsed.dryRun && collector.status === "error") {
       run("update source_status set status = 'error', message = ?, last_run_at = ? where source = ?", collector.message.slice(0, 500), new Date().toISOString(), parsed.source === "showhn" ? "hn" : parsed.source);
@@ -415,6 +418,8 @@ export async function runProbe(body: unknown) {
       inserted: 0,
       deduped,
       emitted,
+      itemCount: budgeted.itemCount,
+      termCount: budgeted.termCount,
       cursorAdvanced: false,
       persisted: false,
       maxItems: parsed.maxItems,
@@ -439,10 +444,54 @@ export async function runProbe(body: unknown) {
     inserted,
     deduped,
     emitted,
+    itemCount: budgeted.itemCount,
+    termCount: budgeted.termCount,
     cursorAdvanced: Boolean(collector.nextCursor?.length),
     persisted: true,
     lastSuccess: finished,
     maxItems: parsed.maxItems,
     budgetMs: parsed.budgetMs,
+  };
+}
+
+function applyProbeBudget(collector: CollectorResult, maxItems: number, seen: Set<string>) {
+  const order: string[] = [];
+  const costs = new Map<string, number>();
+  for (const hit of collector.hits) {
+    const id = hit.url || hit.term;
+    if (!id || seen.has(id)) continue;
+    if (!costs.has(id)) {
+      costs.set(id, 0);
+      order.push(id);
+    }
+    costs.set(id, (costs.get(id) || 0) + 1);
+  }
+  if (!order.length) {
+    for (const item of collector.feed) {
+      const id = item.url || item.externalId;
+      if (!id || seen.has(id) || costs.has(id)) continue;
+      costs.set(id, 1);
+      order.push(id);
+    }
+  }
+  const budget = budgetItems(order.map((id) => ({ id, terms: costs.get(id) || 1 })), maxItems, maxItems);
+  const allow = new Set(budget.kept);
+  const deferred = new Set(budget.deferred);
+  const hits = collector.hits.filter((hit) => allow.has(hit.url || hit.term));
+  const feed = collector.feed.filter((item) => allow.has(item.url || item.externalId));
+  const pages = collector.pages.filter((page) => !page.isNew || allow.has(page.url));
+  const nextCursor = collector.nextCursor ? collector.nextCursor.filter((id) => !deferred.has(id)) : budget.kept;
+  return {
+    collector: {
+      ...collector,
+      hits,
+      feed,
+      pages,
+      nextCursor,
+      stats: { fetched: collector.stats?.fetched ?? order.length + seen.size, deduped: collector.stats?.deduped ?? 0, emitted: budget.itemCount },
+    },
+    fetched: collector.stats?.fetched ?? order.length,
+    itemCount: budget.itemCount,
+    termCount: hits.length,
   };
 }

@@ -18,6 +18,26 @@ export function parseProbe(body: unknown) {
   };
 }
 
+export function budgetItems(items: { id: string; terms: number }[], itemBudget: number, termBudget: number) {
+  const kept: string[] = [];
+  let termCount = 0;
+  for (const item of items) {
+    const cost = Math.max(item.terms, 1);
+    if (kept.length >= itemBudget) break;
+    if (kept.length > 0 && termCount + cost > termBudget) break;
+    kept.push(item.id);
+    termCount += cost;
+    if (termCount >= termBudget) break;
+  }
+  const keptSet = new Set(kept);
+  return {
+    kept,
+    deferred: items.map((item) => item.id).filter((id) => !keptSet.has(id)),
+    itemCount: kept.length,
+    termCount,
+  };
+}
+
 export function capCursor(ids: string[], emitIds: string[], maxItems: number | undefined, baselined: boolean) {
   if (!baselined) return { nextCursor: ids, emitIds: [] as string[] };
   const emit = maxItems ? emitIds.slice(0, maxItems) : emitIds;

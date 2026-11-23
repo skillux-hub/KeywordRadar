@@ -14,6 +14,11 @@ export default function Page() {
   );
   return (
     <Suspense>
+      <section className="mb-4 grid gap-2 sm:grid-cols-3">
+        <h2 className="panel px-4 py-3 text-base font-semibold">正式推荐 <span className="ml-2 text-sm font-normal text-muted">{recommend.total}</span></h2>
+        <h2 className="panel px-4 py-3 text-base font-semibold">待核候选 <span className="ml-2 text-sm font-normal text-muted">{pending.total}</span></h2>
+        <h2 className="panel px-4 py-3 text-base font-semibold">原始记录 <span className="ml-2 text-sm font-normal text-muted">{raw.total}</span></h2>
+      </section>
       <Dashboard
         initial={{
           items: recommend.items,

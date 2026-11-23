@@ -29,7 +29,7 @@ export function hashtagTerms(blob: string) {
 }
 
 export function boilerplateTerm(value: string) {
-  return /\b(privacy policy|cookie policy|terms of service|cookie settings)\b/i.test(value);
+  return /\b(privacy (policy|notice|statement)|cookie (policy|notice|settings)|terms of (service|use))\b/i.test(value);
 }
 
 export function freshSitemapUrls(seen: Set<string>, urls: { url: string; lastmod?: string | null }[], baselined: boolean) {

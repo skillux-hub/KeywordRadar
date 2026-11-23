@@ -441,8 +441,8 @@ export function reviewLane(term: string, rows: { kind?: string | null; title?: s
   if (baseline.relation === "embedded") {
     return { lane: "raw" as const, reason: `短语包含已知实体「${baseline.label}」，但没有这个组合自己的发布绑定。先留在原始记录，不把它写成已知旧词，也不进入待核候选。` };
   }
-  if (/\b(privacy policy|cookie policy|terms of service|cookie settings)\b/i.test(term)) {
-    return { lane: "raw" as const, reason: "导航或法律页用语。原始记录保留，不进入待核候选。" };
+  if (/\b(privacy (policy|notice|statement)|cookie (policy|notice|settings)|terms of (service|use))\b/i.test(term)) {
+    return { lane: "raw" as const, reason: "导航、隐私或条款页用语。原始记录保留，不进入待核候选。" };
   }
   const bound = rows.some((row) => boundToTerm(term, row));
   if (!bound) {
@@ -451,31 +451,28 @@ export function reviewLane(term: string, rows: { kind?: string | null; title?: s
   return { lane: "candidate" as const, reason: "" };
 }
 
-function mentionHost(url: string) {
-  try {
-    const host = new URL(url).hostname.replace(/^www\./, "").toLowerCase();
-    if (host.endsWith(".substack.com") || host === "substack.com") return true;
-    return ["bsky.app", "news.google.com", "reddit.com", "news.ycombinator.com", "medium.com", "stackoverflow.com", "youtube.com", "youtu.be", "x.com", "twitter.com"].includes(host);
-  } catch {
-    return true;
-  }
+function sameSlug(slug: string, term: string) {
+  const compact = normalizeNoveltyName(term).replace(/ /g, "");
+  return compact.length >= 3 && slug.toLowerCase().replace(/[-_]/g, "") === compact;
 }
 
 function boundToTerm(term: string, row: { kind?: string | null; title?: string | null; url?: string | null }) {
-  if (row.kind === "hashtag" || !row.url || mentionHost(row.url)) return false;
-  const name = normalizeNoveltyName(term);
-  const title = normalizeNoveltyName(row.title || "");
-  if (!name) return false;
-  if (row.kind === "entity") return true;
-  if (title === name || title.startsWith(`${name} `) || title.startsWith(`show hn ${name}`)) return true;
-  const compact = name.replace(/ /g, "");
-  if (compact.length < 4) return false;
+  if (row.kind === "hashtag" || !row.url) return false;
+  const title = row.title || "";
+  if (/\b(vs\.?|versus|compared|comparison|best|course|courses|tutorial)\b/i.test(title) || title.includes("#")) return false;
+  let parsed: URL;
   try {
-    const segments = new URL(row.url).pathname.toLowerCase().split("/").filter(Boolean);
-    return segments.some((segment) => segment.replace(/[-_]/g, "") === compact);
+    parsed = new URL(row.url);
   } catch {
     return false;
   }
+  const host = parsed.hostname.replace(/^www\./, "").toLowerCase();
+  const parts = parsed.pathname.split("/").filter(Boolean).map((part) => decodeURIComponent(part));
+  if (host === "github.com" && parts.length === 2 && sameSlug(parts[1], term)) return true;
+  if (host === "pypi.org" && parts[0] === "project" && parts[1] && sameSlug(parts[1], term)) return true;
+  if (host === "npmjs.com" && parts[0] === "package" && parts[1] && sameSlug(parts[1], term)) return true;
+  if (host === "producthunt.com" && (parts[0] === "products" || parts[0] === "posts") && parts[1] && sameSlug(parts[1], term)) return true;
+  return false;
 }
 
 export function judgeSearch(input: {

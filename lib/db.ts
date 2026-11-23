@@ -414,6 +414,12 @@ function seed(db: DatabaseSync) {
   focusSubs.run("ai", "LocalLLaMA", "用户指定的 AI 讨论板块。公开接口失败时不会假装已经采到。");
   focusSubs.run("ai", "artificial", "用户指定的 AI 讨论板块。公开接口失败时不会假装已经采到。");
   focusSubs.run("devtools", "SideProject", "用户指定的开发者作品板块。公开接口失败时不会假装已经采到。");
+  const baseline = db.prepare("select value from meta where key = 'baseline_sitemap'").get() as { value?: string } | undefined;
+  const normalized = db.prepare("select value from meta where key = 'sitemap_is_new_normalized'").get() as { value?: string } | undefined;
+  if (baseline?.value && !normalized?.value) {
+    db.prepare("update sitemap_urls set is_new = 0").run();
+    db.prepare("insert into meta (key, value) values ('sitemap_is_new_normalized', ?) on conflict(key) do update set value = excluded.value").run(new Date().toISOString());
+  }
   if (count("sites") === 0) {
     const stmt = db.prepare("INSERT OR IGNORE INTO sites (industry, domain, name, status, origin) VALUES (?, ?, ?, 'active', 'seed')");
     for (const row of SITES) stmt.run(row.industry, row.domain.toLowerCase(), row.name);

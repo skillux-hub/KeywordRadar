@@ -38,6 +38,12 @@ test("opencode and openclaw mentions stay raw unless the canonical repo url is p
     { kind: "product", title: "Best Personal AI Agents in 2026: OpenClaw, Hermes Agent, Gemini Spark and More", url: "https://news.google.com/rss/articles/example" },
   ]);
   assert.equal(claw.lane, "raw");
+  assert.equal(reviewLane("codescope-ai", [
+    { kind: "entity", title: "codescope-ai", url: "https://pypi.org/project/codescope-ai/" },
+  ]).lane, "candidate");
+  assert.equal(reviewLane("Health Privacy Notice", [
+    { kind: "product", title: "Health Privacy Notice", url: "https://openai.com/policies/privacy" },
+  ]).lane, "raw");
 });
 
 test("a show hn product without an industry word can be a candidate and still not novel", () => {
