@@ -12,7 +12,7 @@ export type Filters = {
   seed?: string;
   q?: string;
   shape?: string;
-  view?: "recommend" | "pending" | "raw";
+  view?: "recommend" | "pending" | "raw" | "excluded";
   noise?: "hide" | "all";
 };
 
@@ -63,6 +63,7 @@ function keywordWhere(filters: Filters) {
   }
   if (filters.view === "raw") sql += " and t.novelty = 'unverified' and ifnull(t.review_lane, 'raw') = 'raw'";
   else if (filters.view === "pending") sql += " and t.novelty = 'unverified' and t.review_lane = 'candidate'";
+  else if (filters.view === "excluded") sql += " and t.novelty = 'established'";
   else sql += " and t.novelty = 'novel'";
   if (filters.noise === "hide") {
     sql += " and t.normalized not like '%privacy policy%' and t.normalized not like '%cookie policy%' and t.normalized not like '%cookie settings%' and t.normalized not like '%terms of service%'";

@@ -40,21 +40,30 @@ test("opencode and openclaw mentions stay raw unless the canonical repo url is p
   assert.equal(claw.lane, "raw");
   assert.equal(reviewLane("codescope-ai", [
     { kind: "entity", title: "codescope-ai", url: "https://pypi.org/project/codescope-ai/" },
-  ]).lane, "candidate");
+  ], now).lane, "raw");
+  assert.equal(reviewLane("codescope-ai", [
+    { kind: "entity", title: "codescope-ai", quote: "Understand a Python codebase: docs linked to the source, cited answers and change review.", url: "https://pypi.org/project/codescope-ai/", publishedAt: "Mon, 23 Nov 2026 19:37:37 GMT", collectedAt: "2026-11-23T19:44:08.407Z" },
+    { url: "https://pypi.org/project/codescope-ai/", eventKind: "product_launch", eventAt: "Mon, 23 Nov 2026 19:37:37 GMT" },
+  ], now).lane, "candidate");
   assert.equal(reviewLane("Health Privacy Notice", [
     { kind: "product", title: "Health Privacy Notice", url: "https://openai.com/policies/privacy" },
   ]).lane, "raw");
 });
 
-test("a show hn product without an industry word can be a candidate and still not novel", () => {
+test("show hn does not enter review until the bound repo has its own created time", () => {
   const rows = [
-    { kind: "product", title: "Show HN: Verfy – checks an AI coding agent's tool calls before they run", url: "https://github.com/verfy-dev/verfy" },
+    { kind: "product", title: "Show HN: Verfy – checks an AI coding agent's tool calls before they run", url: "https://github.com/verfy-dev/verfy", publishedAt: "2026-11-23T16:49:26Z", collectedAt: "2026-11-23T19:29:16.796Z" },
   ];
-  assert.equal(reviewLane("Verfy", rows).lane, "candidate");
+  assert.equal(reviewLane("Verfy", rows, now).lane, "raw");
+  assert.match(reviewLane("Verfy", rows, now).reason, /待补证据/);
+  const created = [...rows, { url: "https://github.com/verfy-dev/verfy", eventKind: "repo_created" as const, eventAt: "2026-11-22T08:00:00Z" }];
+  assert.equal(reviewLane("Verfy", created, now).lane, "candidate");
+  assert.match(reviewLane("Verfy", created, now).reason, /不是推荐/);
   const verdict = judgeBirth({
     term: "Verfy",
     industries: ["ai"],
     sightings: [{ source: "hn", industry: "ai", at: "2026-11-23T16:49:26.000Z", url: rows[0].url, author: "javohr_verfy", title: rows[0].title }],
+    ageEvidence: [{ kind: "repo_created", at: "2026-11-22T08:00:00Z", url: rows[0].url }],
     now,
     windowHours: 48,
   });

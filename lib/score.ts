@@ -1,7 +1,7 @@
 import { SOURCE_LABEL } from "./catalog";
 import { all, get, num, run } from "./db";
 import { detectIntent, industriesFromEvidence, isNoiseTerm, normalize, painNote } from "./extract";
-import { judgeBirth, knownProjectByUrl, reviewLane, type Sighting } from "./novelty";
+import { githubRepoName, judgeBirth, knownProjectByUrl, reviewLane, type Sighting } from "./novelty";
 import { type AgeEvidence } from "./novelty";
 import { redditSpreadBoost } from "./sources/metrics";
 import { clamp } from "./utils";
@@ -239,7 +239,11 @@ export function birthVerdict(termId: number, display: string, _industries: strin
   const verdict = anchored
     ? { status: "established" as const, reason: `这是已知项目「${anchored.label}」。${anchored.note} 证据地址 ${anchored.url}。新帖或新镜像仓库不能当成诞生。`, industry: "", independent: 0, groups: [] as ReturnType<typeof judgeBirth>["groups"], windowHours: 48, windowStart: null, windowEnd: null }
     : judgeBirth({ term: display, industries: industriesFromEvidence(evidenceRows), sightings, ageEvidence: ageEvidenceFor(termId), now });
-  const lane = verdict.status === "unverified" ? reviewLane(display, evidenceRows) : { lane: "", reason: "" };
+  const ages = ageEvidenceFor(termId);
+  const lane = verdict.status === "unverified" ? reviewLane(display, [
+    ...evidenceRows.map((row) => ({ source: row.source, kind: row.kind, title: row.title, url: row.url, quote: row.quote, publishedAt: row.published_at, collectedAt: row.collected_at })),
+    ...ages.map((row) => ({ url: row.url, eventKind: row.kind, eventAt: row.at, title: "", quote: "" })),
+  ]) : { lane: "", reason: "" };
   return {
     ...verdict,
     reason: verdict.status === "unverified" && lane.lane === "raw" && lane.reason ? `${verdict.reason} ${lane.reason}` : verdict.reason,
@@ -248,10 +252,23 @@ export function birthVerdict(termId: number, display: string, _industries: strin
 }
 
 export function ageEvidenceFor(termId: number): AgeEvidence[] {
-  const rows = all<{ kind: AgeEvidence["kind"]; observed_at: string | null }>("select kind, observed_at from term_age_evidence where term_id = ?", termId);
+  const rows = all<{ kind: AgeEvidence["kind"]; observed_at: string | null; note: string | null }>("select kind, observed_at, note from term_age_evidence where term_id = ?", termId);
   const domain = get<{ domain_registered_at: string | null }>("select domain_registered_at from term_analysis where term_id = ?", termId);
-  const evidence: AgeEvidence[] = rows.map((row) => ({ kind: row.kind, at: row.observed_at }));
+  const evidence: AgeEvidence[] = rows.map((row) => ({ kind: row.kind, at: row.observed_at, url: row.note }));
   if (domain?.domain_registered_at) evidence.push({ kind: "domain_registered", at: domain.domain_registered_at });
+  const urls = all<{ url: string }>("select url from term_evidence where term_id = ? and url is not null", termId);
+  const seen = new Set(evidence.filter((item) => item.kind === "repo_created" && item.url).map((item) => githubRepoName(item.url || "")));
+  for (const row of urls) {
+    const name = githubRepoName(row.url);
+    if (!name || seen.has(name)) continue;
+    const snap = get<{ full_name: string; created_at: string }>(
+      "select full_name, created_at from repo_snapshots where lower(full_name) = ? and created_at is not null order by created_at asc limit 1",
+      name,
+    );
+    if (!snap?.created_at) continue;
+    seen.add(name);
+    evidence.push({ kind: "repo_created", at: snap.created_at, url: `https://github.com/${snap.full_name}` });
+  }
   return evidence;
 }
 

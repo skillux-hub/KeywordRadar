@@ -190,3 +190,32 @@ test("another industry does not supply the second source", () => {
   assert.equal(verdict.status, "unverified");
   assert.equal(verdict.independent < 2, true);
 });
+
+test("an old repo creation blocks novelty and a math name is not projected from a new repo", () => {
+  const old = judgeBirth({
+    term: "PostHog",
+    industries: ["devtools"],
+    sightings: [
+      { source: "github", industry: "devtools", at: within(2), url: "https://github.com/PostHog/posthog", title: "star" },
+      { source: "bluesky", industry: "devtools", at: within(3), url: "https://bsky.app/profile/a/post/1", author: "a", title: "posthog again" },
+    ],
+    ageEvidence: [{ kind: "repo_created", at: "2020-01-23T00:00:00Z", url: "https://github.com/PostHog/posthog" }],
+    now,
+    windowHours: 48,
+  });
+  assert.equal(old.status, "unverified");
+  assert.match(old.reason, /早于/);
+  const math = judgeBirth({
+    term: "riemann hypothesis",
+    industries: ["devtools"],
+    sightings: [
+      { source: "github", industry: "devtools", at: within(2), url: "https://github.com/leanprover-community/riemann-hypothesis", title: "formalization" },
+      { source: "bluesky", industry: "devtools", at: within(3), url: "https://bsky.app/profile/a/post/2", author: "b", title: "hypothesis" },
+    ],
+    ageEvidence: [{ kind: "repo_created", at: within(10), url: "https://github.com/leanprover-community/riemann-hypothesis" }],
+    now,
+    windowHours: 48,
+  });
+  assert.equal(math.status, "unverified");
+  assert.match(math.reason, /数学通名/);
+});

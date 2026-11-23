@@ -66,7 +66,7 @@ type Status = {
 
 type Filters = { industry: string; source: string; stage: string; window: string; seed: string; q: string; shape: string };
 
-export function Dashboard({ initial }: { initial?: { items: Keyword[]; total: number; summary: { total: number }; pending: Keyword[]; pendingTotal: number; rawTotal: number; status: Status; seeds: Seed[] } }) {
+export function Dashboard({ initial }: { initial?: { items: Keyword[]; total: number; summary: { total: number }; pending: Keyword[]; pendingTotal: number; rawTotal: number; excludedTotal: number; status: Status; seeds: Seed[] } }) {
   const [meta, setMeta] = useState<Meta | null>(null);
   const [seeds, setSeeds] = useState<Seed[]>(initial?.seeds ?? []);
   const [status, setStatus] = useState<Status | null>(initial?.status ?? null);
@@ -75,7 +75,12 @@ export function Dashboard({ initial }: { initial?: { items: Keyword[]; total: nu
   const [pendingTotal, setPendingTotal] = useState(initial?.pendingTotal ?? 0);
   const [rawTotal, setRawTotal] = useState(initial?.rawTotal ?? 0);
   const [rawItems, setRawItems] = useState<Keyword[]>([]);
+  const [rawQuery, setRawQuery] = useState("");
   const [showRaw, setShowRaw] = useState(false);
+  const [excludedTotal, setExcludedTotal] = useState(initial?.excludedTotal ?? 0);
+  const [excludedItems, setExcludedItems] = useState<Keyword[]>([]);
+  const [showExcluded, setShowExcluded] = useState(false);
+  const [archiveReady, setArchiveReady] = useState(false);
   const [summary, setSummary] = useState(initial?.summary ?? { total: 0 });
   const [loaded, setLoaded] = useState(Boolean(initial));
   const [error, setError] = useState("");
@@ -91,6 +96,7 @@ export function Dashboard({ initial }: { initial?: { items: Keyword[]; total: nu
   const page = parsePage(search.get("page"));
   const size = parseSize(search.get("size"));
   const pendingPage = parsePage(search.get("pendingPage"));
+  const rawPage = parsePage(search.get("rawPage"));
 
   useEffect(() => {
     const ids = seeds.map((seed) => seed.id);
@@ -192,20 +198,29 @@ export function Dashboard({ initial }: { initial?: { items: Keyword[]; total: nu
   }, [query, page, size, pendingPage, status?.running]);
 
   useEffect(() => {
-    if (!showRaw) return;
+    if (!showRaw && !showExcluded) return;
     let stop = false;
-    fetch(`/api/keywords?view=raw&page=1&size=${size}`)
+    setArchiveReady(false);
+    const view = showExcluded ? "excluded" : "raw";
+    const pageNo = showExcluded ? 1 : rawPage;
+    fetch(`/api/keywords?view=${view}&q=${encodeURIComponent(rawQuery)}&page=${pageNo}&size=${size}`)
       .then(async (res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (stop || !data) return;
-        setRawItems(data.items || []);
-        setRawTotal(Number(data.total || 0));
+        if (showExcluded) {
+          setExcludedItems(data.items || []);
+          setExcludedTotal(Number(data.total || 0));
+        } else {
+          setRawItems(data.items || []);
+          setRawTotal(Number(data.total || 0));
+        }
+        setArchiveReady(true);
       })
       .catch(() => undefined);
     return () => {
       stop = true;
     };
-  }, [showRaw, size]);
+  }, [showRaw, showExcluded, size, rawPage, rawQuery]);
 
   async function refresh() {
     setError("");
@@ -378,7 +393,7 @@ export function Dashboard({ initial }: { initial?: { items: Keyword[]; total: nu
       <Pagination page={page} size={size} total={total} />
       <section className="mt-6">
         <h2 className="text-lg font-semibold">待核候选 <span className="text-sm font-normal text-muted">{loaded ? pendingTotal : "—"}</span></h2>
-        <p className="mt-1 text-sm text-muted">只放有自己的发布、仓库或产品页、但还缺诞生证据或行业结论的名字。不是正式推荐。标签串、综述提及、导航页和已知数据库或平台不在这里。</p>
+        <p className="mt-1 text-sm text-muted">待核只收已经绑到该实体、并且有近期创建或原始首发时间的名字。仓库地址本身不够。这里为空，只说明原始记录里还没有可证明的近期首发，不是发现质量已经达标。不是正式推荐。</p>
         <ul className="mt-3 space-y-2">
           {pending.map((item) => (
             <li key={item.id} className="panel px-4 py-3">
@@ -388,23 +403,32 @@ export function Dashboard({ initial }: { initial?: { items: Keyword[]; total: nu
             </li>
           ))}
           {!loaded && <li className="text-sm text-muted">正在读取待验证，不是 0 条。</li>}
-          {loaded && !pending.length && <li className="text-sm text-muted">待核候选这一页是空的。原始记录还有 {rawTotal} 条，默认不铺在首页。</li>}
+          {loaded && !pending.length && <li className="text-sm text-muted">待核候选这一页是空的。原始记录还有 {rawTotal} 条待补证据，默认不铺在首页。这不是质量达标。</li>}
         </ul>
         <Pagination page={pendingPage} size={size} total={pendingTotal} pageParam="pendingPage" />
-        <div className="mt-4">
-          <button type="button" className="text-sm text-primary" onClick={() => setShowRaw((value) => !value)}>
-            原始记录 {loaded ? rawTotal : "—"} 条。默认不展开。
-          </button>
-          {showRaw && (
-            <ul className="mt-3 space-y-2">
-              {rawItems.map((item) => (
-                <li key={item.id} className="panel px-4 py-3">
-                  <Link href={`/terms/${item.id}`} className="font-medium hover:text-primary">{item.term}</Link>
-                  <p className="mt-1 text-sm text-muted">{item.noveltyReason}</p>
-                </li>
-              ))}
-              {!rawItems.length && <li className="text-sm text-muted">正在读取原始记录，不是 0 条。</li>}
-            </ul>
+        <div className="mt-4 space-y-3">
+          <div className="flex flex-wrap gap-3">
+            <button type="button" className="text-sm text-primary" onClick={() => { setShowExcluded(false); setShowRaw((value) => !value); }}>
+              原始记录 {loaded ? rawTotal : "—"} 条。默认不展开，可搜索。
+            </button>
+            <button type="button" className="text-sm text-primary" onClick={() => { setShowRaw(false); setShowExcluded((value) => !value); }}>
+              已排除 {loaded ? excludedTotal : "—"} 条。基线名称留在这里，不从库里删。
+            </button>
+          </div>
+          {(showRaw || showExcluded) && (
+            <>
+              <Input value={rawQuery} onChange={(event) => setRawQuery(event.target.value)} placeholder={showExcluded ? "搜索已排除" : "搜索原始记录"} />
+              <ul className="space-y-2">
+                {(showExcluded ? excludedItems : rawItems).map((item) => (
+                  <li key={item.id} className="panel px-4 py-3">
+                    <Link href={`/terms/${item.id}`} className="font-medium hover:text-primary">{item.term}</Link>
+                    <p className="mt-1 text-sm text-muted">{item.noveltyReason}</p>
+                  </li>
+                ))}
+                {!(showExcluded ? excludedItems : rawItems).length && <li className="text-sm text-muted">{archiveReady ? "这一页没有匹配。换个词或翻页，记录还在库里。" : "正在读取，不是 0 条。"}</li>}
+              </ul>
+              {showRaw && <Pagination page={rawPage} size={size} total={rawTotal} pageParam="rawPage" />}
+            </>
           )}
         </div>
       </section>

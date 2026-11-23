@@ -26,8 +26,13 @@ test("a young repo or domain is only auxiliary and does not admit the name", () 
 });
 
 test("an old repo or domain keeps the name out of recommendations", () => {
-  assert.equal(judgeNovelty("HyperFrames", [{ kind: "repo_created", at: old }], now).status, "established");
-  assert.equal(judgeNovelty("PigeonRelay", [{ kind: "domain_registered", at: old }], now).status, "established");
+  const repo = judgeNovelty("HyperFrames", [{ kind: "repo_created", at: old }], now);
+  const domain = judgeNovelty("PigeonRelay", [{ kind: "domain_registered", at: old }], now);
+  assert.equal(repo.status, "unverified");
+  assert.equal(domain.status, "unverified");
+  assert.match(repo.reason, /早于/);
+  assert.match(domain.reason, /早于/);
+  assert.equal("blocksNovel" in repo && repo.blocksNovel, true);
 });
 
 test("a chinese sentence that mentions typescript is not the typescript entity", () => {
