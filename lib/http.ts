@@ -4,7 +4,7 @@ const BROWSER_UA =
 
 const nextAt = new Map<string, number>();
 
-export type FetchResult = { ok: boolean; status: number; text: string; url: string };
+export type FetchResult = { ok: boolean; status: number; text: string; url: string; notModified?: boolean };
 
 type FetchOpts = {
   intervalMs?: number;
@@ -62,7 +62,28 @@ async function readLimited(res: Response, maxBytes: number) {
   return out;
 }
 
+export function isPublicHttpUrl(raw: string) {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") return false;
+  const host = url.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (host === "localhost" || host.endsWith(".local") || host.endsWith(".internal")) return false;
+  if (host === "0.0.0.0" || host === "::1" || host === "::") return false;
+  const ipv4 = host.match(/^(\d+)\.(\d+)\.(\d+)\.(\d+)$/);
+  if (ipv4) {
+    const a = Number(ipv4[1]);
+    const b = Number(ipv4[2]);
+    if (a === 10 || a === 127 || a === 0 || (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168)) return false;
+  }
+  return true;
+}
+
 export async function fetchText(url: string, opts: FetchOpts = {}): Promise<FetchResult> {
+  if (!isPublicHttpUrl(url)) return { ok: false, status: 0, text: "拒绝非公开地址", url };
   const key = opts.hostKey ?? hostOf(url);
   await pace(key, opts.intervalMs ?? 0);
   const ctrl = new AbortController();
@@ -80,6 +101,7 @@ export async function fetchText(url: string, opts: FetchOpts = {}): Promise<Fetc
         ...opts.headers,
       },
     });
+    if (res.status === 304) return { ok: true, status: 304, text: "", url: res.url || url, notModified: true };
     const buf = await readLimited(res, opts.maxBytes ?? 1_500_000);
     const text = new TextDecoder("utf-8", { fatal: false }).decode(buf);
     return { ok: res.ok, status: res.status, text, url: res.url || url };

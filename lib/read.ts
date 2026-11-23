@@ -12,6 +12,7 @@ export type Filters = {
   seed?: string;
   q?: string;
   shape?: string;
+  view?: "recommend" | "pending";
 };
 
 function cutoff(window: string | undefined) {
@@ -59,7 +60,7 @@ function keywordWhere(filters: Filters) {
     sql += " and (t.normalized like ? or t.display like ?)";
     params.push(`%${filters.q.toLowerCase()}%`, `%${filters.q}%`);
   }
-  sql += " and t.novelty = 'novel'";
+  sql += filters.view === "pending" ? " and t.novelty = 'unverified'" : " and t.novelty = 'novel'";
   return { where: sql, params };
 }
 

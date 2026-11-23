@@ -1,6 +1,6 @@
 import { SOURCE_LABEL } from "./catalog";
 import { all, get, num, run } from "./db";
-import { classifyIndustries, detectIntent, isNoiseTerm, normalize, painNote } from "./extract";
+import { detectIntent, industriesFromEvidence, isNoiseTerm, normalize, painNote } from "./extract";
 import { judgeBirth, type Sighting } from "./novelty";
 import { type AgeEvidence } from "./novelty";
 import { redditSpreadBoost } from "./sources/metrics";
@@ -222,10 +222,11 @@ function lifecycleDurability(obs: Obs[], now: number) {
 
 export function birthVerdict(termId: number, display: string, _industries: string[] = [], now = Date.now()) {
   void _industries;
-  const sightings = all<{ source: string; url: string | null; author: string | null; title: string | null; published_at: string | null; collected_at: string | null; industry: string | null }>(
-    "select source, url, author, title, published_at, collected_at, industry from term_evidence where term_id = ?",
+  const evidenceRows = all<{ source: string; url: string | null; author: string | null; title: string | null; quote: string | null; kind: string | null; published_at: string | null; collected_at: string | null; industry: string | null }>(
+    "select source, url, author, title, quote, kind, published_at, collected_at, industry from term_evidence where term_id = ?",
     termId,
-  ).map((row): Sighting => ({
+  );
+  const sightings = evidenceRows.map((row): Sighting => ({
     source: row.source,
     url: row.url,
     author: row.author,
@@ -233,7 +234,7 @@ export function birthVerdict(termId: number, display: string, _industries: strin
     industry: row.industry,
     at: row.published_at || row.collected_at,
   }));
-  return judgeBirth({ term: display, industries: classifyIndustries(display), sightings, ageEvidence: ageEvidenceFor(termId), now });
+  return judgeBirth({ term: display, industries: industriesFromEvidence(evidenceRows), sightings, ageEvidence: ageEvidenceFor(termId), now });
 }
 
 export function ageEvidenceFor(termId: number): AgeEvidence[] {

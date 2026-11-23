@@ -373,7 +373,7 @@ export function judgeBirth(input: {
   if (!focus.length) {
     return {
       status: "unverified" as NoveltyStatus,
-      reason: "名称本身对不上 AI 工具或开发者工具基线。采集来源上的行业标签不会拿来凑准入，其它行业记录仍保留。",
+      reason: "还没有和这个名称绑定的简介或产品上下文，行业待定。不能只因为名字里没有行业词就断言它不属于，也不能把整篇综述的标签灌给它。",
       industry: "",
       independent: 0,
       groups: [] as SourceGroup[],

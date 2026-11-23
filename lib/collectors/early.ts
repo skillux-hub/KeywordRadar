@@ -1,5 +1,6 @@
 import { get, run } from "../db";
 import { classifyIndustries, withinDays } from "../extract";
+import { githubCreatedSearch, showHnParts } from "./registry-parse";
 import { classifyBreakout, repoSearchVariants } from "../signals/breakout";
 import { fetchJson, fetchText } from "../http";
 import { decodeHtml } from "../xml";
@@ -51,7 +52,7 @@ export async function collectHn(ctx: CollectContext): Promise<CollectorResult> {
     }
     for (const hit of res.data.hits) {
       if (!hit.title || !withinDays(hit.created_at, 14)) continue;
-      const industry = query.industry ?? classifyIndustries(hit.title)[0] ?? null;
+      const industry = classifyIndustries(hit.title)[0] ?? null;
       const link = hit.url || (hit.objectID ? `https://news.ycombinator.com/item?id=${hit.objectID}` : undefined);
       docs.push({
         title: hit.title,
@@ -78,8 +79,30 @@ export async function collectHn(ctx: CollectContext): Promise<CollectorResult> {
       }
     }
   }
-  if (!docs.length && errors) return result("hn", "error", "Algolia 没有返回故事");
-  return result("hn", "ok", `读取 ${docs.length} 条近期故事`, { hits: takeHits(docs), feed: feed.slice(0, 40) });
+  const show = await fetchJson<{ hits?: Row[] }>("https://hn.algolia.com/api/v1/search_by_date?tags=show_hn&hitsPerPage=15", {
+    intervalMs: 200,
+    timeoutMs: 12000,
+    hostKey: "hn.algolia.com",
+  });
+  for (const hit of show.data?.hits ?? []) {
+    if (!hit.title || !hit.created_at) continue;
+    const parts = showHnParts(hit.title);
+    if (!parts.name) continue;
+    docs.push({
+      entityOnly: true,
+      entityName: parts.name,
+      context: parts.context || hit.story_text || "",
+      title: parts.name,
+      url: hit.url || (hit.objectID ? `https://news.ycombinator.com/item?id=${hit.objectID}` : undefined),
+      author: hit.author,
+      publishedAt: hit.created_at,
+      bornKind: "product_launch",
+      bornAt: hit.created_at,
+      engagement: (hit.points ?? 0) + (hit.num_comments ?? 0),
+    });
+  }
+  if (!docs.length && errors && !show.ok) return result("hn", "error", "Algolia 没有返回故事");
+  return result("hn", "ok", `读取 ${docs.length} 条近期故事，Show HN 用 created_at 而不是 updated_at`, { hits: takeHits(docs), feed: feed.slice(0, 40) });
 }
 
 export async function collectProductHunt(): Promise<CollectorResult> {
@@ -128,35 +151,27 @@ export async function collectProductHunt(): Promise<CollectorResult> {
       url: post.url,
       publishedAt: post.createdAt,
       engagement: post.votesCount,
-      industry: classifyIndustries(`${post.name ?? ""} ${post.tagline ?? ""}`)[0] ?? null,
+      entityOnly: true,
+      context: post.tagline || "",
+      industry: null,
     }));
   return result("producthunt", "ok", `通过${via}读取 ${docs.length} 个新品`, { hits: takeHits(docs) });
 }
 
 export async function collectGithub(): Promise<CollectorResult> {
-  const headers: Record<string, string> = { accept: "application/vnd.github+json" };
+  const headers: Record<string, string> = {
+    accept: "application/vnd.github+json",
+    "user-agent": "SEOKeywordRadar/1.0",
+  };
   if (process.env.GITHUB_TOKEN) headers.authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
   const repos: { name: string; desc: string; stars: number; url: string; createdAt: string | null }[] = [];
-  const page = await fetchText("https://github.com/trending?since=daily&spoken_language_code=en", {
-    browser: true,
-    intervalMs: 500,
-    timeoutMs: 15000,
-    hostKey: "github.com",
-  });
-  if (page.ok) {
-    for (const block of page.text.split('<article class="Box-row">').slice(1)) {
-      const href = block.match(/<h2[\s\S]*?<a[^>]+href="\/([^"]+)"/i)?.[1];
-      if (!href || !href.includes("/") || href.startsWith("sponsors/")) continue;
-      const desc = decodeHtml(block.match(/<p[^>]*>([\s\S]*?)<\/p>/i)?.[1] ?? "");
-      repos.push({ name: href, desc, stars: 0, url: `https://github.com/${href}`, createdAt: null });
-    }
-  }
-  const since = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
-  const search = await fetchJson<{ items?: { full_name: string; description: string | null; stargazers_count: number; html_url: string; created_at?: string }[] }>(
-    `https://api.github.com/search/repositories?q=${encodeURIComponent(`created:>${since} stars:>30`)}&sort=stars&order=desc&per_page=12`,
+  const page = { ok: false, status: 0 };
+  const search = await fetchJson<{ items?: { full_name: string; description: string | null; stargazers_count: number; html_url: string; created_at?: string }[]; message?: string }>(
+    githubCreatedSearch(),
     { headers, intervalMs: 700, timeoutMs: 12000, hostKey: "api.github.com" },
   );
   for (const item of search.data?.items ?? []) {
+    if (!classifyIndustries(item.description || "").some((industry) => industry === "ai" || industry === "devtools")) continue;
     if (repos.some((repo) => repo.name.toLowerCase() === item.full_name.toLowerCase())) continue;
     repos.push({
       name: item.full_name,
@@ -210,7 +225,7 @@ export async function collectGithub(): Promise<CollectorResult> {
   } catch {
     /* 星标快照失败时仍返回这一轮仓库 */
   }
-  if (!repos.length) return result("github", "error", page.ok ? "没有解析到仓库" : `趋势页 HTTP ${page.status}，搜索接口也没有结果`);
+  if (!repos.length) return result("github", "error", search.ok ? "创建时间接口没有返回描述能归类的仓库" : `GitHub 创建时间接口 HTTP ${search.status || page.status}`);
   const docs = repos.slice(0, 30).map((repo) => ({
     title: repo.desc || repo.name,
     body: repo.desc,
@@ -220,9 +235,11 @@ export async function collectGithub(): Promise<CollectorResult> {
     bornAt: repo.createdAt || undefined,
     url: repo.url,
     engagement: repo.stars,
-    industry: classifyIndustries(`${repo.name} ${repo.desc}`)[0] ?? null,
+    entityOnly: true,
+    context: repo.desc,
+    industry: null,
   }));
-  return result("github", "ok", `趋势页与新仓库合计 ${docs.length} 个，首次爆发 ${breakouts} 个`, { hits: takeHits([...leadDocs, ...docs], 100) });
+  return result("github", "ok", `按创建时间取到 ${docs.length} 个描述匹配的仓库，首次爆发 ${breakouts} 个。没有 GITHUB_TOKEN 时走公开额度。`, { hits: takeHits([...leadDocs, ...docs], 100) });
 }
 
 export async function collectBluesky(ctx: CollectContext): Promise<CollectorResult> {

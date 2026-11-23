@@ -39,6 +39,7 @@ type Keyword = {
   independentSources?: number;
   focusIndustry?: string;
   serpShape: string;
+  noveltyReason?: string;
 };
 
 type Kpis = {
@@ -70,6 +71,8 @@ export function Dashboard() {
   const [seeds, setSeeds] = useState<Seed[]>([]);
   const [status, setStatus] = useState<Status | null>(null);
   const [items, setItems] = useState<Keyword[]>([]);
+  const [pending, setPending] = useState<Keyword[]>([]);
+  const [pendingTotal, setPendingTotal] = useState(0);
   const [summary, setSummary] = useState({ total: 0 });
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState("");
@@ -84,6 +87,7 @@ export function Dashboard() {
   const search = useSearchParams();
   const page = parsePage(search.get("page"));
   const size = parseSize(search.get("size"));
+  const pendingPage = parsePage(search.get("pendingPage"));
 
   useEffect(() => {
     const ids = seeds.map((seed) => seed.id);
@@ -167,6 +171,14 @@ export function Dashboard() {
         .catch(() => {
           if (!stop) setError("词表还没准备好");
         });
+      fetch(`/api/keywords?view=pending&page=${pendingPage}&size=${size}`)
+        .then(async (res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (stop || !data) return;
+          setPending(data.items || []);
+          setPendingTotal(Number(data.total || 0));
+        })
+        .catch(() => undefined);
     };
     tick();
     const timer = setInterval(tick, status?.running ? 4000 : 20000);
@@ -174,7 +186,7 @@ export function Dashboard() {
       stop = true;
       clearInterval(timer);
     };
-  }, [query, page, size, status?.running]);
+  }, [query, page, size, pendingPage, status?.running]);
 
   async function refresh() {
     setError("");
@@ -276,7 +288,7 @@ export function Dashboard() {
       {loaded && !items.length && (
         <div className="panel px-5 py-16 text-center">
           <Waves className="mx-auto text-faint" size={28} />
-          <p className="mt-3 text-base font-medium">{status?.running ? "正在听早期信号" : "这一筛里还没有词"}</p>
+          <p className="mt-3 text-base font-medium">{status?.running ? "正在听早期信号" : "正式推荐是空的"}</p>
           <p className="mx-auto mt-1 max-w-sm text-sm text-muted">{status?.running ? "社区和仓库会先回来，搜索校验只做辅助，不表示已经收录。" : "放宽阶段或时间，或点立即刷新。筛空是正常结果。"}</p>
         </div>
       )}
@@ -344,6 +356,20 @@ export function Dashboard() {
         </div>
       )}
       <Pagination page={page} size={size} total={total} />
+      <section className="mt-6">
+        <h2 className="text-lg font-semibold">待验证</h2>
+        <p className="mt-1 text-sm text-muted">这些候选留着观察，不是正式推荐。原因来自诞生记录、行业上下文或来源分组，不会因为列表为空就隐藏。</p>
+        <ul className="mt-3 space-y-2">
+          {pending.map((item) => (
+            <li key={item.id} className="panel px-4 py-3">
+              <Link href={`/terms/${item.id}`} className="font-medium hover:text-primary">{item.term}</Link>
+              <p className="mt-1 text-sm text-muted">{item.noveltyReason || "待验证"}</p>
+            </li>
+          ))}
+          {!pending.length && <li className="text-sm text-muted">当前页没有待验证候选。</li>}
+        </ul>
+        <Pagination page={pendingPage} size={size} total={pendingTotal} pageParam="pendingPage" />
+      </section>
     </Shell>
   );
 }

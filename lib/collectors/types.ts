@@ -1,4 +1,4 @@
-import { detectIntent, normalize, phrasesFromText, quoteAround, type Intent } from "../extract";
+import { classifyIndustries, detectIntent, normalize, phrasesFromText, quoteAround, type Intent } from "../extract";
 
 export type CollectContext = {
   seeds: { id: number; topic: string; region: string; industry: string | null }[];
@@ -69,6 +69,7 @@ export type CollectorResult = {
   feed: FeedItem[];
   suggestions: Suggestion[];
   pages: SitemapPage[];
+  nextCursor?: string[];
 };
 
 export function result(
@@ -97,9 +98,32 @@ export type Doc = {
   entityName?: string;
   bornKind?: "repo_created" | "domain_registered" | "wikipedia_created" | "product_launch";
   bornAt?: string;
+  entityOnly?: boolean;
+  context?: string;
 };
 
 export function hitsFromDoc(doc: Doc): Hit[] {
+  if (doc.entityOnly && doc.entityName) {
+    const context = doc.context || "";
+    const industry = classifyIndustries(context)[0] ?? null;
+    return [{
+      term: doc.entityName,
+      always: true,
+      industry,
+      seedId: doc.seedId ?? null,
+      url: doc.url,
+      title: doc.entityName,
+      quote: context.slice(0, 220),
+      author: doc.author,
+      channel: doc.channel,
+      engagement: doc.engagement,
+      publishedAt: doc.publishedAt,
+      intent: detectIntent(context),
+      kind: "entity",
+      bornKind: doc.bornKind,
+      bornAt: doc.bornAt,
+    }];
+  }
   const phrases = phrasesFromText(doc);
   const intent = detectIntent(`${doc.title ?? ""} ${doc.body ?? ""} ${doc.productName ?? ""}`);
   const plain = `${doc.title ?? ""} ${doc.body ?? ""}`.trim();

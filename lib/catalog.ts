@@ -37,20 +37,22 @@ export const INTENT_LABEL: Record<string, string> = {
 export const SOURCE_META: {
   id: string;
   nameZh: string;
-  role: "discovery" | "validation" | "watch";
+  role: "discovery" | "validation" | "watch" | "candidate";
   keys: string;
 }[] = [
   { id: "hn", nameZh: "Hacker News", role: "discovery", keys: "无需密钥（Algolia）" },
   { id: "producthunt", nameZh: "Product Hunt", role: "discovery", keys: "可选 PRODUCTHUNT_TOKEN；默认同 RSS" },
   { id: "github", nameZh: "GitHub Trending", role: "discovery", keys: "可选 GITHUB_TOKEN" },
   { id: "reddit", nameZh: "Reddit 讨论监控", role: "watch", keys: "可选 REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET；否则用公开 RSS" },
-  { id: "bluesky", nameZh: "Bluesky", role: "discovery", keys: "无需密钥（AT Protocol 公开接口）" },
+  { id: "bluesky", nameZh: "Bluesky", role: "watch", keys: "无需密钥。辅助社区，不能代替未采集的 X" },
   { id: "stackexchange", nameZh: "Stack Exchange", role: "discovery", keys: "可选 STACKEXCHANGE_KEY" },
   { id: "youtube", nameZh: "YouTube", role: "discovery", keys: "频道 RSS 无需密钥；YOUTUBE_API_KEY 用于搜索、标签和评论" },
   { id: "substack", nameZh: "Substack / 通讯", role: "discovery", keys: "无需密钥（RSS）" },
   { id: "medium", nameZh: "Medium", role: "discovery", keys: "无需密钥（标签 RSS）" },
   { id: "googlenews", nameZh: "Google News", role: "discovery", keys: "无需密钥（RSS，作新闻信号，不是趋势验证）" },
-  { id: "sitemap", nameZh: "Sitemap 监控", role: "watch", keys: "无需密钥；遵守 robots.txt" },
+  { id: "sitemap", nameZh: "官网 Sitemap", role: "validation", keys: "只记录已配置站点的 URL，不把官网首页或历史页当新词" },
+  { id: "pypi", nameZh: "PyPI 新包", role: "discovery", keys: "官方 RSS https://pypi.org/rss/packages.xml。新包只进入观察，不自动成为推荐" },
+  { id: "npm", nameZh: "npm 新包", role: "discovery", keys: "更新流 https://registry.npmjs.org/-/rss 只用来找名字，诞生时间以注册表 time.created 为准" },
   { id: "x", nameZh: "X 大V监控", role: "watch", keys: "X_BEARER_TOKEN，或 X_PROVIDER_BASE_URL + X_PROVIDER_API_KEY。都不配则只从社区文本发现账号" },
   { id: "tiktok", nameZh: "TikTok", role: "discovery", keys: "无密钥，尽力读取 Creative Center" },
   { id: "quora", nameZh: "Quora", role: "discovery", keys: "无密钥，尽力读取公开页" },
@@ -60,6 +62,14 @@ export const SOURCE_META: {
   { id: "telegram", nameZh: "Telegram", role: "discovery", keys: "TELEGRAM_BOT_TOKEN 与 TELEGRAM_CHANNEL_USERNAMES" },
   { id: "threads", nameZh: "Threads", role: "discovery", keys: "THREADS_ACCESS_TOKEN" },
   { id: "google", nameZh: "Google 验证", role: "validation", keys: "无需密钥；自动补全 + 每日趋势 RSS。不作为发现源" },
+  { id: "arxiv", nameZh: "arXiv cs.AI/CL/LG", role: "candidate", keys: "RSS 已返回 XML，但是论文更新，不抽成新实体，默认不跑" },
+  { id: "huggingface", nameZh: "Hugging Face 模型", role: "candidate", keys: "创建时间接口可用，模型卡不是必须的新词源，默认不跑" },
+  { id: "futurepedia", nameZh: "Futurepedia", role: "candidate", keys: "robots 给出 sitemap_tools.xml，实际请求是 Cloudflare 挑战页，未接入" },
+  { id: "toolify", nameZh: "Toolify", role: "candidate", keys: "robots 有 sitemap，未确认条目是创建时间还是整站更新，未接入" },
+  { id: "taaft", nameZh: "There's An AI For That", role: "candidate", keys: "robots 没有给出可解析的新词 sitemap，未接入" },
+  { id: "betalist", nameZh: "BetaList", role: "candidate", keys: "未找到可解析的官方新上架 feed，未接入" },
+  { id: "chromewebstore", nameZh: "Chrome 网上应用店", role: "candidate", keys: "sitemap 不提供扩展创建时间，未接入" },
+  { id: "indiehackers", nameZh: "Indie Hackers", role: "candidate", keys: "sitemap 索引的 lastmod 是文件更新时间，不是产品创建时间，未接入" },
 ];
 
 export const SOURCE_LABEL: Record<string, string> = Object.fromEntries(SOURCE_META.map((s) => [s.id, s.nameZh]));

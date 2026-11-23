@@ -190,6 +190,7 @@ export async function collectReddit(ctx: CollectContext): Promise<CollectorResul
     } catch (error) {
       failures += 1;
       lastError = error instanceof Error ? error.message : "失败";
+      if (/429/.test(lastError)) break;
     }
   }
 
@@ -228,11 +229,16 @@ export async function collectReddit(ctx: CollectContext): Promise<CollectorResul
     }
   }
 
-  if (!hits.length && !feed.length) {
-    return result("reddit", "error", `${token ? "官方 API" : "公开 RSS"} 没有返回帖子${lastError ? `：${lastError}` : ""}，失败 ${failures} 个`);
+  if (/429/.test(lastError) && !hits.length && !feed.length) {
+    return result("reddit", "error", "公开接口 HTTP 429。本轮已停止剩余板块，没有连续重试。没有官方凭据时，不能把 Bluesky 或官网当成 Reddit 已覆盖。");
   }
-  const mode = token ? "官方 API" : "公开 RSS（无分数，热度按新帖时间估计）";
-  return result("reddit", "ok", `${mode}，本轮轮转 ${picked.length} 个社区，失败 ${failures} 个`, {
+  if (!hits.length && !feed.length) {
+    const gap = token ? "官方 API" : "未配置 REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET。公开 JSON 和 /new.rss 经常被拒绝，不能把 Bluesky 或官网当成 Reddit 已覆盖";
+    return result("reddit", "error", `${gap}${lastError ? `：${lastError}` : ""}，失败 ${failures} 个`);
+  }
+  const mode = token ? "官方 API" : "公开接口（无官方凭据，失败不会用其它源顶上）";
+  const stopped = /429/.test(lastError) ? " 后续板块因 429 停止，没有连续重试。" : "";
+  return result("reddit", "ok", `${mode}，本轮轮转 ${picked.length} 个社区，失败 ${failures} 个。${stopped}`, {
     hits: hits.slice(0, 120),
     feed: feed.slice(0, 80),
     suggestions: suggestions.slice(0, 30),
@@ -241,11 +247,12 @@ export async function collectReddit(ctx: CollectContext): Promise<CollectorResul
 
 async function loadPublic(sub: string, kind: "new" | "hot" | "comments") {
   const res = await fetchJson(`https://www.reddit.com/r/${encodeURIComponent(sub)}/${kind}.json?limit=12&raw_json=1`, {
-    intervalMs: 2200,
+    intervalMs: 5000,
     timeoutMs: 12000,
     hostKey: "www.reddit.com",
     headers: { "user-agent": UA, accept: "application/json" },
   });
+  if (res.status === 429) throw new Error("HTTP 429");
   if (!res.ok) return [];
   return fromListing(res.data);
 }
@@ -276,27 +283,17 @@ async function loadJson(token: string, sub: string, kind: "new" | "hot" | "comme
 }
 
 async function loadRss(sub: string): Promise<RedditPost[]> {
-  let last = "RSS 失败";
-  for (let attempt = 0; attempt < 3; attempt++) {
-    const res = await readFeed(`https://www.reddit.com/r/${encodeURIComponent(sub)}/new.rss?limit=12`, {
-      intervalMs: 2800,
-      hostKey: "www.reddit.com",
-    }).catch(async (error: unknown) => {
-      last = error instanceof Error ? error.message : "RSS 失败";
-      await new Promise((resolve) => setTimeout(resolve, 5000));
-      return null;
-    });
-    if (res) {
-      return res.map((entry) => ({
-        id: entry.link || entry.title,
-        title: entry.title,
-        selftext: entry.content,
-        permalink: entry.link,
-        author: entry.author?.replace(/^\/u\//, "").trim(),
-        created_utc: entry.date ? Date.parse(entry.date) / 1000 : undefined,
-        subreddit: sub,
-      }));
-    }
-  }
-  throw new Error(last);
+  const res = await readFeed(`https://www.reddit.com/r/${encodeURIComponent(sub)}/new.rss?limit=12`, {
+    intervalMs: 5000,
+    hostKey: "www.reddit.com",
+  });
+  return res.map((entry) => ({
+    id: entry.link || entry.title,
+    title: entry.title,
+    selftext: entry.content,
+    permalink: entry.link,
+    author: entry.author?.replace(/^\/u\//, "").trim(),
+    created_utc: entry.date ? Date.parse(entry.date) / 1000 : undefined,
+    subreddit: sub,
+  }));
 }

@@ -268,6 +268,12 @@ function migrate(db: DatabaseSync) {
       stars INTEGER,
       reason TEXT
     );
+    CREATE TABLE IF NOT EXISTS source_cursors (
+      source TEXT NOT NULL,
+      external_id TEXT NOT NULL,
+      first_seen_at TEXT NOT NULL,
+      PRIMARY KEY (source, external_id)
+    );
     CREATE TABLE IF NOT EXISTS trends_reviews (
       term_id INTEGER PRIMARY KEY,
       source TEXT,
@@ -401,6 +407,12 @@ function seed(db: DatabaseSync) {
     );
     for (const row of BOOTSTRAP_SUBREDDITS) stmt.run(row.industry, row.name);
   }
+  const focusSubs = db.prepare(
+    "INSERT OR IGNORE INTO subreddits (industry, name, status, origin, discovered_reason) VALUES (?, ?, 'active', 'requested', ?)",
+  );
+  focusSubs.run("ai", "LocalLLaMA", "用户指定的 AI 讨论板块。公开接口失败时不会假装已经采到。");
+  focusSubs.run("ai", "artificial", "用户指定的 AI 讨论板块。公开接口失败时不会假装已经采到。");
+  focusSubs.run("devtools", "SideProject", "用户指定的开发者作品板块。公开接口失败时不会假装已经采到。");
   if (count("sites") === 0) {
     const stmt = db.prepare("INSERT OR IGNORE INTO sites (industry, domain, name, status, origin) VALUES (?, ?, ?, 'active', 'seed')");
     for (const row of SITES) stmt.run(row.industry, row.domain.toLowerCase(), row.name);
@@ -421,7 +433,11 @@ function seed(db: DatabaseSync) {
     `INSERT OR IGNORE INTO source_status (source, name_zh, role, status, message, item_count, keys_hint)
      VALUES (?, ?, ?, 'idle', '尚未运行', 0, ?)`,
   );
-  for (const source of SOURCE_META) src.run(source.id, source.nameZh, source.role, source.keys);
+  const sync = db.prepare("update source_status set role = ?, name_zh = ?, keys_hint = ? where source = ?");
+  for (const source of SOURCE_META) {
+    src.run(source.id, source.nameZh, source.role, source.keys);
+    sync.run(source.role, source.nameZh, source.keys, source.id);
+  }
 }
 
 export function getDb() {

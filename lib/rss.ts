@@ -34,6 +34,7 @@ export async function readFeed(url: string, opts?: { intervalMs?: number; browse
     hostKey: opts?.hostKey,
     headers: { accept: "application/atom+xml, application/rss+xml, application/xml, text/xml, */*" },
   });
+  if (res.notModified) return [];
   if (!res.ok) throw new Error(`HTTP ${res.status || "网络错误"}`);
   if (!res.text.includes("<")) throw new Error("返回的不是 XML");
   const xml = parseXml(res.text);

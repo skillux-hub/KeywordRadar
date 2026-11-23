@@ -36,8 +36,14 @@ export default function SourcesPage() {
     <Shell>
       <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">数据源</h1>
       <p className="mt-2 max-w-2xl text-sm text-muted">每个采集器单独失败。缺密钥的来源会停在「未启用」，页面其他部分继续工作。</p>
-      <div className="mt-5 grid gap-3 md:grid-cols-2">
-        {sources.map((source) => (
+      {["发现", "监控", "验证", "未启用"].map((role) => {
+        const group = sources.filter((source) => source.roleLabel === role);
+        if (!group.length) return null;
+        return (
+          <section key={role} className="mt-6">
+            <h2 className="text-sm font-semibold">{role}</h2>
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        {group.map((source) => (
           <article key={source.id} className="panel p-4">
             <div className="flex items-center justify-between gap-3">
               <h2 className="font-medium">{source.url ? <ExternalLink href={source.url}>{source.name}</ExternalLink> : source.name}</h2>
@@ -49,6 +55,9 @@ export default function SourcesPage() {
           </article>
         ))}
       </div>
+          </section>
+        );
+      })}
     </Shell>
   );
 }

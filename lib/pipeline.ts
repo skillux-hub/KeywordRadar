@@ -9,9 +9,11 @@ import { validateGoogle } from "./collectors/google";
 import { collectBluesky, collectGithub, collectGoogleNews, collectHn, collectMedium, collectNewsletters, collectProductHunt, collectStackExchange, collectYoutube } from "./collectors/early";
 import { collectAmazon, collectDiscord, collectEtsy, collectQuora, collectTelegram, collectThreads, collectTikTok } from "./collectors/optional";
 import { collectReddit } from "./collectors/reddit";
+import { collectNpm, collectPypi } from "./collectors/registry";
 import { collectSitemaps } from "./collectors/sitemap";
 import { result, withTimeout, type CollectContext, type CollectorResult, type Hit, type Suggestion } from "./collectors/types";
 import { collectX } from "./collectors/x";
+import { commitCursor } from "./baseline";
 import { discoveryDue, runDiscovery } from "./sources/discover";
 import { judgeSearch } from "./novelty";
 
@@ -21,6 +23,8 @@ const STEPS: { id: string; label: string; budget: number; run: (ctx: CollectCont
   { id: "hn", label: "Hacker News", budget: 28000, run: collectHn },
   { id: "producthunt", label: "Product Hunt", budget: 20000, run: () => collectProductHunt() },
   { id: "github", label: "GitHub", budget: 25000, run: () => collectGithub() },
+  { id: "pypi", label: "PyPI", budget: 20000, run: () => collectPypi() },
+  { id: "npm", label: "npm", budget: 25000, run: () => collectNpm() },
   { id: "reddit", label: "Reddit", budget: 90000, run: collectReddit },
   { id: "bluesky", label: "Bluesky", budget: 30000, run: collectBluesky },
   { id: "stackexchange", label: "Stack Exchange", budget: 25000, run: () => collectStackExchange() },
@@ -125,6 +129,7 @@ function persist(collector: CollectorResult, runId: number) {
     row.engagement += hit.engagement ?? 0;
     row.always = row.always || Boolean(hit.always);
     for (const industry of classifyIndustries(hit.term)) row.industries.add(industry);
+    if (hit.kind === "entity" && hit.industry) row.industries.add(hit.industry);
     if (hit.seedId) row.seeds.add(hit.seedId);
     if ((hit.term.match(/[A-Z]/g)?.length ?? 0) > (row.display.match(/[A-Z]/g)?.length ?? 0)) row.display = hit.term;
     if (row.evidence.length < 5 && (hit.quote || hit.url)) row.evidence.push(hit);
@@ -229,6 +234,7 @@ function persist(collector: CollectorResult, runId: number) {
   }
   for (const suggestion of collector.suggestions) saveSuggestion(suggestion);
   run("update source_status set status = ?, message = ?, last_run_at = ?, item_count = ? where source = ?", collector.status, collector.message.slice(0, 500), now, kept, collector.source);
+  if (collector.nextCursor?.length) commitCursor(collector.source, collector.nextCursor);
   return kept;
 }
 

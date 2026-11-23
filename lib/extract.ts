@@ -1,3 +1,4 @@
+import { boilerplateTerm, hashtagTerms } from "./collectors/registry-rules";
 import { properNounCandidates } from "./signals/names";
 import { decodeHtml } from "./xml";
 
@@ -57,17 +58,7 @@ const BLOCK = new Set([
   "the new",
 ]);
 
-const INDUSTRY_RULES: [string, RegExp][] = [
-  ["ai", /\b(llm|gpt|chatgpt|claude|gemini|openai|anthropic|machine learning|neural|rag|agentic|copilot|diffusion|ai agent|ai tool|ai coding)\b/i],
-  ["crypto", /\b(crypto|bitcoin|ethereum|solana|defi|nft|blockchain|web3|tokenomics)\b/i],
-  ["ecommerce", /\b(ecommerce|e-commerce|shopify|dtc|d2c|amazon seller|sku|checkout|storefront)\b/i],
-  ["marketing", /\b(seo|sem|ppc|backlink|keyword research|content marketing|newsletter growth|search console)\b/i],
-  ["health", /\b(fitness|workout|skincare|supplement|nutrition|longevity|sleep tracker|protein powder)\b/i],
-  ["gaming", /\b(gaming|game dev|steam deck|playstation|xbox|nintendo|esports|indie game)\b/i],
-  ["finance", /\b(stocks|investing|portfolio|fintech|trading|etf|mortgage|personal finance|brokerage)\b/i],
-  ["saas", /\b(saas|b2b|startup|mrr|arr|onboarding|workflow automation|product led)\b/i],
-  ["devtools", /\b(developer tool|devtools|cli tool|sdk|linter|github action|vscode extension|package manager|ide plugin)\b/i],
-];
+export { INDUSTRY_RULES, classifyIndustries, industriesFromEvidence } from "./industries";
 
 export function normalize(input: string): string {
   return input
@@ -115,6 +106,7 @@ function acceptPhrase(phrase: string, kind: Phrase["kind"]) {
   if (words.every((word) => STOP.has(word) || GENERIC.has(word))) return null;
   if (BLOCK.has(normalized)) return null;
   if (normalized.includes("x2f") || normalized.startsWith("http") || /\bwww\b/.test(normalized)) return null;
+  if (boilerplateTerm(normalized)) return null;
   if (!words.some((word) => word.length >= 4 || DISTINCTIVE.has(word) || word.includes("."))) return null;
   if (words.length === 1) {
     const only = words[0];
@@ -216,15 +208,18 @@ export function phrasesFromText(input: { title?: string; body?: string; productN
     }
   }
 
-  for (const match of blob.matchAll(/#([A-Za-z][A-Za-z0-9_]{2,30})/g)) {
-    const raw = match[1];
-    const lower = raw.toLowerCase();
-    const shaped = /[a-z][A-Z]|[A-Z][a-z]+[A-Z]|[0-9]/.test(raw);
-    if (!shaped || HEAD_SINGLE.has(lower) || GENERIC.has(lower) || isNoiseTerm(lower)) continue;
-    pushPhrase(phrases, raw, raw, "hashtag", true);
+  const tags = hashtagTerms(blob);
+  const namedBlob = tags.length >= 2 ? blob.replace(/#[A-Za-z][A-Za-z0-9_]{2,30}/g, " ") : blob;
+  if (tags.length < 2) {
+    for (const raw of tags) {
+      const lower = raw.toLowerCase();
+      const shaped = /[a-z][A-Z]|[A-Z][a-z]+[A-Z]|[0-9]/.test(raw);
+      if (!shaped || HEAD_SINGLE.has(lower) || GENERIC.has(lower) || isNoiseTerm(lower)) continue;
+      pushPhrase(phrases, raw, raw, "hashtag", true);
+    }
   }
-  for (const name of properNounCandidates(blob)) pushPhrase(phrases, name, name, "product", true);
-  for (const match of blob.matchAll(/\b((?:[A-Z][a-z]+){2,}[A-Za-z0-9]*)\b/g)) {
+  for (const name of properNounCandidates(namedBlob)) pushPhrase(phrases, name, name, "product", true);
+  for (const match of namedBlob.matchAll(/\b((?:[A-Z][a-z]+){2,}[A-Za-z0-9]*)\b/g)) {
     pushPhrase(phrases, match[1], contentWords(match[1]).join(" ") || match[1], "product", true);
   }
   for (const match of blob.matchAll(/"([^"]{3,40})"/g)) {
@@ -242,11 +237,6 @@ export function detectIntent(text: string): Intent {
   if (/\b(how|what|why|guide|tutorial|is there|anyone|does anyone|help me)\b/.test(value)) return "informational";
   if (/\b(login|official site|homepage|download)\b/.test(value)) return "navigational";
   return "unknown";
-}
-
-export function classifyIndustries(text: string): string[] {
-  const found = INDUSTRY_RULES.filter(([, rule]) => rule.test(text)).map(([id]) => id);
-  return found.length ? found : [];
 }
 
 export function painNote(text: string): string | null {
