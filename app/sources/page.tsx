@@ -9,6 +9,8 @@ type Source = {
   id: string;
   name: string;
   roleLabel: string;
+  enabled?: boolean;
+  fetchStatus?: string;
   status: string;
   message: string;
   lastRunAt: string | null;
@@ -47,7 +49,7 @@ export default function SourcesPage() {
           <article key={source.id} className="panel p-4">
             <div className="flex items-center justify-between gap-3">
               <h2 className="font-medium">{source.url ? <ExternalLink href={source.url}>{source.name}</ExternalLink> : source.name}</h2>
-              <span className="rounded-full bg-accent px-2 py-1 text-xs">{STATUS_LABEL[source.status] || source.status} · {source.roleLabel}</span>
+              <span className="rounded-full bg-accent px-2 py-1 text-xs">{source.enabled === false ? "配置未启用" : "配置启用"} · 最近采集 {STATUS_LABEL[source.fetchStatus || source.status] || source.status} · {source.roleLabel}</span>
             </div>
             <p className="mt-2 text-sm leading-6 text-muted">{source.message}</p>
             <p className="mt-2 text-xs text-muted">密钥：{source.keys}</p>

@@ -17,6 +17,8 @@ export function GET(request: Request) {
       name: row.name_zh,
       role: row.role,
       roleLabel: row.role === "validation" ? "验证" : row.role === "watch" ? "监控" : row.role === "candidate" ? "未启用" : "发现",
+      enabled: row.role !== "candidate" && forcedStatus(row.source, row.status) !== "disabled",
+      fetchStatus: forcedStatus(row.source, row.status),
       status: forcedStatus(row.source, row.status),
       message: forcedMessage(row.source, row.message || ""),
       lastRunAt: row.last_run_at,

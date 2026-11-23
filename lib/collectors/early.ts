@@ -34,7 +34,7 @@ export async function collectHn(ctx: CollectContext): Promise<CollectorResult> {
     objectID?: string;
     story_text?: string;
   };
-  const queries: { q: string | null; seedId: number | null; industry: string | null }[] = [
+  const queries: { q: string | null; seedId: number | null; industry: string | null }[] = ctx.probe === "showhn" ? [] : [
     { q: null, seedId: null, industry: null },
     ...ctx.seeds.slice(0, 8).map((seed) => ({ q: seed.topic, seedId: seed.id, industry: seed.industry })),
   ];
@@ -79,7 +79,7 @@ export async function collectHn(ctx: CollectContext): Promise<CollectorResult> {
       }
     }
   }
-  const show = await fetchJson<{ hits?: Row[] }>("https://hn.algolia.com/api/v1/search_by_date?tags=show_hn&hitsPerPage=15", {
+  const show = await fetchJson<{ hits?: Row[] }>(`https://hn.algolia.com/api/v1/search_by_date?tags=show_hn&hitsPerPage=${ctx.probe === "showhn" ? 15 : 15}`, {
     intervalMs: 200,
     timeoutMs: 12000,
     hostKey: "hn.algolia.com",
@@ -158,7 +158,7 @@ export async function collectProductHunt(): Promise<CollectorResult> {
   return result("producthunt", "ok", `通过${via}读取 ${docs.length} 个新品`, { hits: takeHits(docs) });
 }
 
-export async function collectGithub(): Promise<CollectorResult> {
+export async function collectGithub(ctx: CollectContext = { seeds: [], xAccounts: [], subreddits: [], redditUsers: [], sites: [], newsletters: [], youtube: [], medium: [] }): Promise<CollectorResult> {
   const headers: Record<string, string> = {
     accept: "application/vnd.github+json",
     "user-agent": "SEOKeywordRadar/1.0",
@@ -199,7 +199,7 @@ export async function collectGithub(): Promise<CollectorResult> {
           repo.createdAt = info.data.created_at ?? repo.createdAt;
         }
       }
-      if (repo.stars <= 0) continue;
+      if (repo.stars <= 0 || ctx.dryRun) continue;
       const previous = get<{ stars: number }>(
         "select stars from repo_snapshots where full_name = ? order by collected_at desc limit 1",
         repo.name,
@@ -226,7 +226,7 @@ export async function collectGithub(): Promise<CollectorResult> {
     /* 星标快照失败时仍返回这一轮仓库 */
   }
   if (!repos.length) return result("github", "error", search.ok ? "创建时间接口没有返回描述能归类的仓库" : `GitHub 创建时间接口 HTTP ${search.status || page.status}`);
-  const docs = repos.slice(0, 30).map((repo) => ({
+  const docs = repos.slice(0, ctx.maxItems ?? 30).map((repo) => ({
     title: repo.desc || repo.name,
     body: repo.desc,
     repoName: repo.name,

@@ -42,7 +42,7 @@ export const SOURCE_META: {
 }[] = [
   { id: "hn", nameZh: "Hacker News", role: "discovery", keys: "无需密钥（Algolia）" },
   { id: "producthunt", nameZh: "Product Hunt", role: "discovery", keys: "可选 PRODUCTHUNT_TOKEN；默认同 RSS" },
-  { id: "github", nameZh: "GitHub Trending", role: "discovery", keys: "可选 GITHUB_TOKEN" },
+  { id: "github", nameZh: "GitHub 新仓库", role: "discovery", keys: "官方创建时间搜索。可选 GITHUB_TOKEN；没有密钥时用公开额度，失败会写明" },
   { id: "reddit", nameZh: "Reddit 讨论监控", role: "watch", keys: "可选 REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET；否则用公开 RSS" },
   { id: "bluesky", nameZh: "Bluesky", role: "watch", keys: "无需密钥。辅助社区，不能代替未采集的 X" },
   { id: "stackexchange", nameZh: "Stack Exchange", role: "discovery", keys: "可选 STACKEXCHANGE_KEY" },

@@ -66,21 +66,21 @@ type Status = {
 
 type Filters = { industry: string; source: string; stage: string; window: string; seed: string; q: string; shape: string };
 
-export function Dashboard() {
+export function Dashboard({ initial }: { initial?: { items: Keyword[]; total: number; summary: { total: number }; pending: Keyword[]; pendingTotal: number; status: Status; seeds: Seed[] } }) {
   const [meta, setMeta] = useState<Meta | null>(null);
-  const [seeds, setSeeds] = useState<Seed[]>([]);
-  const [status, setStatus] = useState<Status | null>(null);
-  const [items, setItems] = useState<Keyword[]>([]);
-  const [pending, setPending] = useState<Keyword[]>([]);
-  const [pendingTotal, setPendingTotal] = useState(0);
-  const [summary, setSummary] = useState({ total: 0 });
-  const [loaded, setLoaded] = useState(false);
+  const [seeds, setSeeds] = useState<Seed[]>(initial?.seeds ?? []);
+  const [status, setStatus] = useState<Status | null>(initial?.status ?? null);
+  const [items, setItems] = useState<Keyword[]>(initial?.items ?? []);
+  const [pending, setPending] = useState<Keyword[]>(initial?.pending ?? []);
+  const [pendingTotal, setPendingTotal] = useState(initial?.pendingTotal ?? 0);
+  const [summary, setSummary] = useState(initial?.summary ?? { total: 0 });
+  const [loaded, setLoaded] = useState(Boolean(initial));
   const [error, setError] = useState("");
   const [picked, setPicked] = useState<number[]>([]);
   const [seedReady, setSeedReady] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [filters, setFilters] = useState<Filters>({ industry: "", source: "", stage: "", window: "7d", seed: "", q: "", shape: "" });
-  const [total, setTotal] = useState(0);
+  const [total, setTotal] = useState(initial?.total ?? 0);
   const seenSeeds = useRef<number[]>([]);
   const filterKey = useRef<string | null>(null);
   const router = useRouter();
@@ -171,7 +171,7 @@ export function Dashboard() {
         .catch(() => {
           if (!stop) setError("词表还没准备好");
         });
-      fetch(`/api/keywords?view=pending&page=${pendingPage}&size=${size}`)
+      fetch(`/api/keywords?view=pending&noise=hide&page=${pendingPage}&size=${size}`)
         .then(async (res) => (res.ok ? res.json() : null))
         .then((data) => {
           if (stop || !data) return;
@@ -225,7 +225,7 @@ export function Dashboard() {
           <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-faint">Keyword radar</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight sm:text-[28px]">英语市场的新词候选</h1>
           <p className="mt-1 hidden max-w-2xl text-sm leading-6 text-muted sm:block">
-            {summary.total} 个已确认的新词在当前筛选里。要同时有独立诞生记录、历史排除，以及窗口内两组可分开来源。只有讨论、旧词、新域名或新仓库都不会进入；筛空是正常结果。上次采集 {status?.finishedAt ? ago(status.finishedAt) : "还没完成"}。
+            {loaded ? summary.total : "—"} 个已确认的新词在当前筛选里。要同时有独立诞生记录、历史排除，以及窗口内两组可分开来源。只有讨论、旧词、新域名或新仓库都不会进入；筛空是正常结果。上次采集 {status?.finishedAt ? ago(status.finishedAt) : status ? "还没完成" : "正在读取"}。
           </p>
         </div>
         <div className="flex gap-2">
@@ -358,7 +358,7 @@ export function Dashboard() {
       <Pagination page={page} size={size} total={total} />
       <section className="mt-6">
         <h2 className="text-lg font-semibold">待验证</h2>
-        <p className="mt-1 text-sm text-muted">这些候选留着观察，不是正式推荐。原因来自诞生记录、行业上下文或来源分组，不会因为列表为空就隐藏。</p>
+        <p className="mt-1 text-sm text-muted">这些候选留着观察，不是正式推荐。隐私政策、cookie 和条款页默认不排进这个队列，原始记录仍在库里。</p>
         <ul className="mt-3 space-y-2">
           {pending.map((item) => (
             <li key={item.id} className="panel px-4 py-3">
@@ -366,7 +366,8 @@ export function Dashboard() {
               <p className="mt-1 text-sm text-muted">{item.noveltyReason || "待验证"}</p>
             </li>
           ))}
-          {!pending.length && <li className="text-sm text-muted">当前页没有待验证候选。</li>}
+          {!loaded && <li className="text-sm text-muted">正在读取待验证，不是 0 条。</li>}
+          {loaded && !pending.length && <li className="text-sm text-muted">这一页没有待验证候选。</li>}
         </ul>
         <Pagination page={pendingPage} size={size} total={pendingTotal} pageParam="pendingPage" />
       </section>

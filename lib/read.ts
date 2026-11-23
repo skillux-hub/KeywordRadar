@@ -13,6 +13,7 @@ export type Filters = {
   q?: string;
   shape?: string;
   view?: "recommend" | "pending";
+  noise?: "hide" | "all";
 };
 
 function cutoff(window: string | undefined) {
@@ -61,6 +62,9 @@ function keywordWhere(filters: Filters) {
     params.push(`%${filters.q.toLowerCase()}%`, `%${filters.q}%`);
   }
   sql += filters.view === "pending" ? " and t.novelty = 'unverified'" : " and t.novelty = 'novel'";
+  if (filters.noise === "hide") {
+    sql += " and t.normalized not like '%privacy policy%' and t.normalized not like '%cookie policy%' and t.normalized not like '%cookie settings%' and t.normalized not like '%terms of service%'";
+  }
   return { where: sql, params };
 }
 

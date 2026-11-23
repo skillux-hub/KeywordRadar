@@ -16,6 +16,7 @@ import { collectX } from "./collectors/x";
 import { commitCursor } from "./baseline";
 import { discoveryDue, runDiscovery } from "./sources/discover";
 import { judgeSearch } from "./novelty";
+import { parseProbe, type ProbeSource } from "./probe";
 
 const lock = globalThis as unknown as { __radarLock?: boolean };
 
@@ -23,8 +24,8 @@ const STEPS: { id: string; label: string; budget: number; run: (ctx: CollectCont
   { id: "hn", label: "Hacker News", budget: 28000, run: collectHn },
   { id: "producthunt", label: "Product Hunt", budget: 20000, run: () => collectProductHunt() },
   { id: "github", label: "GitHub", budget: 25000, run: () => collectGithub() },
-  { id: "pypi", label: "PyPI", budget: 20000, run: () => collectPypi() },
-  { id: "npm", label: "npm", budget: 25000, run: () => collectNpm() },
+  { id: "pypi", label: "PyPI", budget: 20000, run: (ctx) => collectPypi(ctx) },
+  { id: "npm", label: "npm", budget: 25000, run: (ctx) => collectNpm(ctx) },
   { id: "reddit", label: "Reddit", budget: 90000, run: collectReddit },
   { id: "bluesky", label: "Bluesky", budget: 30000, run: collectBluesky },
   { id: "stackexchange", label: "Stack Exchange", budget: 25000, run: () => collectStackExchange() },
@@ -362,4 +363,86 @@ export async function refreshAll(trigger: string) {
   const finished = new Date().toISOString();
   run("update runs set finished_at = ?, status = 'ok', summary = ? where id = ?", finished, notes.join(" | ").slice(0, 800), runId);
   run("update job_state set running = 0, phase = ?, finished_at = ?, done = total where id = 1", tuning.tuned ? "完成，并微调了早发现权重" : "完成", finished);
+}
+
+const probeAt = { last: 0 };
+
+export async function runProbe(body: unknown) {
+  const parsed = parseProbe(body);
+  if ("error" in parsed) return { http: 400, ok: false, error: parsed.error };
+  if (isRefreshRunning()) return { http: 409, ok: false, error: "已有采集在跑" };
+  if (Date.now() - probeAt.last < 10000) return { http: 429, ok: false, error: "试采间隔至少 10 秒" };
+  probeAt.last = Date.now();
+  const ctx = {
+    ...loadContext(),
+    maxItems: parsed.maxItems,
+    dryRun: parsed.dryRun,
+    probe: parsed.source === "showhn" ? ("showhn" as const) : undefined,
+  };
+  const runners: Record<ProbeSource, (context: CollectContext) => Promise<CollectorResult>> = {
+    github: collectGithub,
+    pypi: (context) => collectPypi(context),
+    npm: (context) => collectNpm(context),
+    showhn: collectHn,
+    producthunt: () => collectProductHunt(),
+    sitemap: collectSitemaps,
+  };
+  let collector: CollectorResult;
+  try {
+    collector = await withTimeout(runners[parsed.source](ctx), parsed.budgetMs, parsed.source);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "失败";
+    if (!parsed.dryRun) {
+      run("update source_status set status = 'error', message = ?, last_run_at = ? where source = ?", message.slice(0, 500), new Date().toISOString(), parsed.source === "showhn" ? "hn" : parsed.source);
+    }
+    return { http: 200, ok: false, mode: parsed.dryRun ? "dry-run" : "persist", source: parsed.source, status: "error", message, fetched: 0, inserted: 0, deduped: 0, cursorAdvanced: false, persisted: false };
+  }
+  const fetched = collector.stats?.fetched ?? collector.hits.length;
+  const deduped = collector.stats?.deduped ?? 0;
+  const emitted = collector.stats?.emitted ?? collector.hits.length;
+  if (parsed.dryRun || collector.status === "error") {
+    if (!parsed.dryRun && collector.status === "error") {
+      run("update source_status set status = 'error', message = ?, last_run_at = ? where source = ?", collector.message.slice(0, 500), new Date().toISOString(), parsed.source === "showhn" ? "hn" : parsed.source);
+    }
+    return {
+      http: 200,
+      ok: collector.status !== "error",
+      mode: parsed.dryRun ? "dry-run" : "persist",
+      source: parsed.source,
+      status: collector.status,
+      message: collector.message,
+      fetched,
+      inserted: 0,
+      deduped,
+      emitted,
+      cursorAdvanced: false,
+      persisted: false,
+      maxItems: parsed.maxItems,
+      budgetMs: parsed.budgetMs,
+    };
+  }
+  const started = new Date().toISOString();
+  const runRow = run("insert into runs (trigger, started_at, status) values (?, ?, 'running')", `probe:${parsed.source}`, started);
+  const runId = Number(runRow.lastInsertRowid);
+  const inserted = persist(collector, runId);
+  scoreAll();
+  const finished = new Date().toISOString();
+  run("update runs set finished_at = ?, status = 'ok', summary = ? where id = ?", finished, collector.message.slice(0, 500), runId);
+  return {
+    http: 200,
+    ok: true,
+    mode: "persist",
+    source: parsed.source,
+    status: collector.status,
+    message: collector.message,
+    fetched,
+    inserted,
+    deduped,
+    emitted,
+    cursorAdvanced: Boolean(collector.nextCursor?.length),
+    persisted: true,
+    lastSuccess: finished,
+    maxItems: parsed.maxItems,
+    budgetMs: parsed.budgetMs,
+  };
 }

@@ -9,6 +9,9 @@ export type CollectContext = {
   newsletters: { industry: string; name: string | null; url: string }[];
   youtube: { industry: string; name: string | null; channelId: string }[];
   medium: { industry: string; tag: string }[];
+  maxItems?: number;
+  dryRun?: boolean;
+  probe?: "showhn";
 };
 
 export type Hit = {
@@ -70,6 +73,7 @@ export type CollectorResult = {
   suggestions: Suggestion[];
   pages: SitemapPage[];
   nextCursor?: string[];
+  stats?: { fetched: number; deduped: number; emitted: number };
 };
 
 export function result(

@@ -1,4 +1,5 @@
-import { get, run } from "../db";
+import { adoptStoredSitemapBaseline } from "../baseline";
+import { get } from "../db";
 import { fetchText, isPublicHttpUrl, readRobots, robotsAllows } from "../http";
 import { asArray, decodeHtml, parseXml, textOf, type Xml } from "../xml";
 import { result, type CollectContext, type CollectorResult, type FeedItem, type SitemapPage } from "./types";
@@ -63,6 +64,7 @@ function pageMeta(html: string) {
 export async function collectSitemaps(ctx: CollectContext): Promise<CollectorResult> {
   const feed: FeedItem[] = [];
   const pages: SitemapPage[] = [];
+  const adopted = ctx.dryRun ? { adopted: false, stored: 0 } : adoptStoredSitemapBaseline();
   const baselined = Boolean(get<{ value: string }>("select value from meta where key = ?", "baseline_sitemap")?.value);
   const notes: string[] = [];
   for (const site of ctx.sites.slice(0, 6)) {
@@ -118,6 +120,7 @@ export async function collectSitemaps(ctx: CollectContext): Promise<CollectorRes
         isNew,
       });
       if (!isNew) continue;
+      if (fresh >= (ctx.maxItems ?? 20)) continue;
       fresh += 1;
       const headline = title || h1 || slug;
       feed.push({
@@ -133,8 +136,7 @@ export async function collectSitemaps(ctx: CollectContext): Promise<CollectorRes
     }
     notes.push(`${site.domain} 新 URL ${fresh}`);
   }
-  if (!baselined) run("insert into meta (key, value) values ('baseline_sitemap', '1') on conflict(key) do update set value = excluded.value");
-  const note = `${baselined ? "已有基线。" : "首次只建基线，历史 URL 不算新词。"}${notes.join("；") || "没有读到站点地图"} 官网页面只做验证记录。`;
+  const note = `${ctx.dryRun ? "试跑，不写基线。" : adopted.adopted ? `已把库内 ${adopted.stored} 条历史 URL 标成基线，不把它们输出成新词。` : baselined ? "已有基线。" : ""}${notes.join("；") || "没有读到站点地图"} 官网页面只做验证记录。`;
   if (!pages.length && !feed.length) return result("sitemap", notes.length ? "ok" : "error", note);
   return result("sitemap", "ok", note, { hits: [], feed: feed.slice(0, 40), pages });
 }

@@ -24,6 +24,9 @@ export type SourceCard = {
   posts: { title: string; url: string; engagement: number; discussion: string; publishedAt: string }[];
   discussion: { ask: number; pain: number; compare: number; recommend: number; other: number };
   terms: { id: number; display: string }[];
+  rosterEnabled: boolean;
+  collectorStatus: string;
+  lastFetched: string | null;
 };
 
 function originLabel(origin: string) {
@@ -108,7 +111,16 @@ function cardFor(platform: "x" | "reddit", key: string, statuses: string[]): Sou
       posts: [],
       discussion: { ask: 0, pain: 0, compare: 0, recommend: 0, other: 0 },
       terms,
+      rosterEnabled: group.some((row) => row.status === "active"),
+      collectorStatus: collectorHealth(platform),
+      lastFetched: group.map((row) => (row.last_fetched_at ? String(row.last_fetched_at) : "")).filter(Boolean).sort().at(-1) || null,
     };
+}
+
+function collectorHealth(platform: "x" | "reddit") {
+  const row = get<{ status: string }>("select status from source_status where source = ?", platform);
+  if (platform === "x" && !xProviderConfigured()) return "disabled";
+  return row?.status || "idle";
 }
 
 function emptyCard(platform: "x" | "reddit", key: string): SourceCard {
@@ -132,6 +144,9 @@ function emptyCard(platform: "x" | "reddit", key: string): SourceCard {
     posts: [],
     discussion: { ask: 0, pain: 0, compare: 0, recommend: 0, other: 0 },
     terms: [],
+    rosterEnabled: false,
+    collectorStatus: platform === "x" && !xProviderConfigured() ? "disabled" : "idle",
+    lastFetched: null,
   };
 }
 

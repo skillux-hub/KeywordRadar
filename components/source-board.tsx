@@ -33,6 +33,9 @@ type Card = {
   topics: string[];
   posts: { title: string; url: string; engagement: number; discussion: string; publishedAt: string }[];
   discussion: { ask: number; pain: number; compare: number; recommend: number; other: number };
+  rosterEnabled?: boolean;
+  collectorStatus?: string;
+  lastFetched?: string | null;
   terms: { id: number; display: string }[];
 };
 
@@ -188,7 +191,7 @@ export function SourceBoard({ platform }: { platform: "x" | "reddit" | "all" }) 
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <h2 className="text-base font-semibold"><ExternalLink href={profileUrl(item.platform, item.key)}>{item.label}</ExternalLink></h2>
-                  <span className="text-xs text-faint">{item.origin} · {item.status === "paused" ? "已暂停" : "跟踪中"}</span>
+                  <span className="text-xs text-faint">{item.origin} · 名单{item.rosterEnabled === false || item.status === "paused" ? "未启用" : "启用"} · 采集{item.collectorStatus === "ok" ? "成功" : item.collectorStatus === "disabled" ? "未配置" : item.collectorStatus === "error" ? "失败" : "未成功"}{item.lastFetched ? ` · 上次拉到 ${item.lastFetched}` : " · 还没有成功时间线"}</span>
                 </div>
                 <p className="mt-1 text-xs text-muted">{item.industryLabels.join("、") || "行业还没定"}{item.reason ? ` · ${item.reason}` : ""}</p>
               </div>
