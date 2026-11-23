@@ -27,6 +27,93 @@ export type AgeEvidence = {
   url?: string | null;
 };
 
+export type Subject = {
+  kind: "github" | "pypi" | "npm" | "domain" | "directory";
+  identity: string;
+  name: string;
+};
+
+export function entityKey(raw: string) {
+  const folded = raw
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2");
+  return folded.toLowerCase().replace(/['’]/g, "").replace(/[^\p{L}\p{N}]+/gu, "");
+}
+
+export function subjectOf(raw: string): Subject | null {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") return null;
+  const host = url.hostname.replace(/^www\./, "").toLowerCase();
+  const parts = url.pathname.split("/").filter(Boolean).map((part) => {
+    try {
+      return decodeURIComponent(part);
+    } catch {
+      return part;
+    }
+  });
+  if (host === "github.com" && parts.length >= 2) {
+    const repo = parts[1].replace(/\.git$/i, "");
+    if (!parts[0] || !repo || parts[0] === "." || repo === "..") return null;
+    return { kind: "github", identity: `${parts[0]}/${repo}`.toLowerCase(), name: repo };
+  }
+  if (host === "pypi.org" && parts[0] === "project" && parts[1]) return { kind: "pypi", identity: parts[1].toLowerCase(), name: parts[1] };
+  if (host === "npmjs.com" && parts[0] === "package" && parts[1]) return { kind: "npm", identity: parts[1].toLowerCase(), name: parts[1] };
+  if (host === "producthunt.com" && (parts[0] === "products" || parts[0] === "posts") && parts[1]) {
+    return { kind: "directory", identity: parts[1].toLowerCase(), name: parts[1] };
+  }
+  if (host === "medium.com" || host.endsWith(".medium.com") || host === "bsky.app" || host === "reddit.com" || host === "x.com" || host === "twitter.com") return null;
+  if (parts.length > 1) return null;
+  const label = host.split(".")[0]?.replace(/[-_]/g, "") || "";
+  if (label.length < 3) return null;
+  return { kind: "domain", identity: host, name: label };
+}
+
+export function sameSubject(term: string, raw: string) {
+  const subject = subjectOf(raw);
+  if (!subject) return { ok: false, subject, why: "这个地址没有可单独识别的产品主体。" };
+  const left = entityKey(term);
+  const right = entityKey(subject.name);
+  if (left.length < 3 || right.length < 3 || left !== right) {
+    return {
+      ok: false,
+      subject,
+      why: `主体是 ${subject.identity}（${subject.name}），不是「${term}」。标题、正文或 URL 里出现名称，都不能把另一个仓库、包或页面的时间套过来。`,
+    };
+  }
+  return { ok: true, subject, why: `主体是 ${subject.kind} ${subject.identity}，与「${term}」是同一个名称。` };
+}
+
+export function verifiedCreation(term: string, kind: string | null | undefined, raw: string | null | undefined) {
+  if (!raw) return false;
+  const owned = sameSubject(term, raw);
+  if (!owned.ok || !owned.subject) return false;
+  if (kind === "repo_created") return owned.subject.kind === "github";
+  if (kind === "product_launch" || kind === "package_created") return owned.subject.kind === "pypi" || owned.subject.kind === "npm";
+  return false;
+}
+
+export function commonNameShell(term: string, texts: string[]) {
+  const tokens = term
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+  if (tokens.length !== 1) return "";
+  const word = tokens[0];
+  if (word.length < 4 || /\d/.test(word)) return "";
+  const plural = /(?:s|x|z|ch|sh)$/i.test(word) ? `${word}es` : `${word}s`;
+  if (new RegExp(`\\b${plural}\\b`, "i").test(texts.join(" "))) {
+    return `「${term}」在自己的说明里以通名「${plural}」出现。同名新仓库是这个通名的项目壳，不能把仓库创建时间当成这个词的诞生。`;
+  }
+  return "";
+}
+
 export type NoveltyStatus = "novel" | "established" | "unverified";
 
 export function normalizeNoveltyName(raw: string) {
@@ -154,13 +241,18 @@ export function judgeNovelty(term: string, evidence: AgeEvidence[] = [], now = D
   let youngReason = "";
   let oldReason = "";
   for (const item of evidence) {
-    if (item.kind === "product_launch" && githubRepoName(item.url || "")) continue;
+    if (!item.url || !sameSubject(term, item.url).ok) continue;
+    const place = subjectOf(item.url)?.kind;
+    const verified = verifiedCreation(term, item.kind, item.url);
+    const ownDomain = item.kind === "domain_registered" && place === "domain";
+    if (!verified && !ownDomain) continue;
     const time = item.at ? Date.parse(item.at) : NaN;
     if (!Number.isFinite(time)) continue;
     const age = now - time;
     if (age < 0) continue;
     const fresh = age <= windowMs;
-    const reason = reasonFor(item.kind, fresh);
+    if (ownDomain && fresh) continue;
+    const reason = `${reasonFor(item.kind, fresh)} 主体地址 ${item.url}。`;
     if (fresh) youngReason = youngReason || reason;
     else oldReason = oldReason || reason;
   }
@@ -354,8 +446,9 @@ export function confirmationWindow(sightings: Sighting[], windowHours: number) {
   };
 }
 
-function youngEvidence(evidence: AgeEvidence[], now: number) {
+function youngEvidence(term: string, evidence: AgeEvidence[], now: number) {
   return evidence.some((item) => {
+    if (!verifiedCreation(term, item.kind, item.url)) return false;
     const time = item.at ? Date.parse(item.at) : NaN;
     return Number.isFinite(time) && now - time <= 180 * 86400000 && now - time >= 0;
   });
@@ -433,7 +526,7 @@ export function judgeBirth(input: {
       windowEnd: null,
     };
   }
-  const young = youngEvidence(input.ageEvidence ?? [], now);
+  const young = youngEvidence(input.term, input.ageEvidence ?? [], now);
   const span = counted.windowStart && counted.windowEnd ? Date.parse(counted.windowEnd) - Date.parse(counted.windowStart) : 0;
   const spanHours = Math.max(0, Math.round(span / 3600000));
   const windowNote = counted.groups.length
@@ -442,7 +535,7 @@ export function judgeBirth(input: {
   if (young && counted.groups.length >= 2) {
     return {
       status: "novel" as NoveltyStatus,
-      reason: `${chosen} 基线内同时满足三项：观察到的年轻诞生记录、没有更早的历史排除、以及窗口内 ${counted.groups.length} 组可分开来源。${windowNote} 分组只依据链接、标题和发起人，不能保证识别出所有同一运营者。诞生记录来自已采到的仓库、域名或发布日，不是编造的发布时间。`,
+      reason: `${chosen} 基线内同时满足三项：与名称一致的仓库或包创建记录、没有更早的同主体历史、以及窗口内 ${counted.groups.length} 组可分开来源。${windowNote} 别的页面正文里提到这个名称、目录重上架或 Show HN 的发帖时间都没有算作诞生。`,
       ...windowFields,
     };
   }
@@ -511,7 +604,10 @@ export function reviewLane(term: string, rows: ReleaseRow[], now = Date.now(), w
     return { lane: "raw" as const, reason: "导航、隐私或条款页用语。原始记录保留，不进入待核候选。" };
   }
   const common = commonTermKind(term);
-  const repoDates = dated(rows, (row) => row.eventKind === "repo_created" && Boolean(githubRepoName(row.url || "")), now);
+  const ownedRepo = (row: ReleaseRow) => row.eventKind === "repo_created" && verifiedCreation(term, "repo_created", row.url);
+  const repoDates = dated(rows, ownedRepo, now);
+  const shell = commonNameShell(term, rows.filter((row) => row.url && sameSubject(term, row.url).ok).map((row) => `${row.title || ""} ${row.quote || ""}`));
+  if (shell) return { lane: "raw" as const, reason: shell };
   if (common) {
     const seen = repoDates[0]?.at;
     return {
@@ -521,8 +617,8 @@ export function reviewLane(term: string, rows: ReleaseRow[], now = Date.now(), w
         : `「${term}」属于${common}。同名路径或清单不能进入待核。`,
     };
   }
-  const packageDates = dated(rows, (row) => (row.eventKind === "package_created" || row.eventKind === "product_launch") && packagePlace(term, row.url || "") && !versionTitle(row.title || ""), now);
-  const domainReg = dated(rows, (row) => row.eventKind === "domain_registered", now);
+  const packageDates = dated(rows, (row) => verifiedCreation(term, row.eventKind, row.url) && row.eventKind !== "repo_created" && !versionTitle(row.title || ""), now);
+  const domainReg = dated(rows, (row) => row.eventKind === "domain_registered" && Boolean(row.url && sameSubject(term, row.url).ok), now);
   const older = [...repoDates, ...packageDates, ...domainReg].filter((item) => item.age === "old").sort((a, b) => a.ms - b.ms);
   if (older.length) {
     return {
@@ -545,7 +641,17 @@ export function reviewLane(term: string, rows: ReleaseRow[], now = Date.now(), w
   if (published.kind === "version") {
     return { lane: "raw" as const, reason: "目录或包标题是版本号、重上架或更新，不是原始创建。旧包的新版本不进入待核。" };
   }
-  if (published.kind === "recent") return { lane: "candidate" as const, reason: candidateReason(term, published.at, published.url) };
+  if (published.kind === "recent") {
+    return { lane: "candidate" as const, reason: `有与「${term}」同主体的自有站点发布提及（时间原文 ${published.at}，${published.url}）。这是来源声称的发布时间，不是已验证的仓库或包创建时间，只进待核，不能进入推荐。` };
+  }
+  const foreign = rows.find((row) => row.eventKind === "repo_created" && row.url && subjectOf(row.url)?.kind === "github" && !sameSubject(term, row.url).ok);
+  if (foreign?.url) {
+    const owned = sameSubject(term, foreign.url);
+    return { lane: "raw" as const, reason: `${owned.why} 快照创建时间原文是 ${foreign.eventAt || "未知"}。读证据 URL 时不能把别的仓库创建时间当成这个名称的诞生。原证据保留。这不是已知旧词结论。` };
+  }
+  if (published.kind === "directory") {
+    return { lane: "raw" as const, reason: "只有目录的 published 时间。它可能是重上架或更新，没有这个名称自己的创建记录。先留在原始记录，不把它写成已知旧项目。" };
+  }
   if (rows.some((row) => row.url && releaseUrl(term, row.url))) {
     return { lane: "raw" as const, reason: "有仓库、包或产品地址，但没有可核对的创建或原始发布时间。先留在原始记录待补证据，不能据此说它是旧项目，也不是已知旧词结论。" };
   }
@@ -553,7 +659,7 @@ export function reviewLane(term: string, rows: ReleaseRow[], now = Date.now(), w
 }
 
 function candidateReason(term: string, at: string, url: string) {
-  return `有与「${term}」绑定的近期原始发布（时间原文 ${at}，${url}）。仍缺第二组独立来源或更完整的历史核验，所以只进待核，不是推荐。`;
+  return `${sameSubject(term, url).why} 已验证的创建时间原文是 ${at}，地址 ${url}。仍缺第二组独立来源或更完整的历史核验，所以只进待核，不是推荐。`;
 }
 
 function dated(rows: ReleaseRow[], take: (row: ReleaseRow) => boolean, now: number) {
@@ -575,11 +681,17 @@ function ageOf(at: string, now: number, windowDays = releaseWindowDays()) {
 
 function publishedRelease(term: string, rows: ReleaseRow[], now: number, windowDays: number) {
   let version = false;
+  let directory = false;
   let hit: { at: string; url: string } | null = null;
   for (const row of rows) {
     if (!row.url || row.eventKind) continue;
     const place = releaseUrl(term, row.url);
-    if (place !== "domain" && place !== "ph") continue;
+    if (place === "ph") {
+      directory = true;
+      continue;
+    }
+    if (place !== "domain") continue;
+    if (!sameSubject(term, row.url).ok) continue;
     if (versionTitle(`${row.title || ""} ${row.quote || ""}`)) {
       version = true;
       continue;
@@ -593,6 +705,7 @@ function publishedRelease(term: string, rows: ReleaseRow[], now: number, windowD
   }
   if (hit) return { kind: "recent" as const, ...hit };
   if (version) return { kind: "version" as const, at: "", url: "" };
+  if (directory) return { kind: "directory" as const, at: "", url: "" };
   return { kind: "none" as const, at: "", url: "" };
 }
 

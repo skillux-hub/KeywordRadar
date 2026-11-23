@@ -15,7 +15,7 @@ import { result, withTimeout, type CollectContext, type CollectorResult, type Hi
 import { collectX } from "./collectors/x";
 import { commitCursor, readCursor } from "./baseline";
 import { discoveryDue, runDiscovery } from "./sources/discover";
-import { judgeSearch } from "./novelty";
+import { judgeSearch, verifiedCreation } from "./novelty";
 import { budgetItems, parseProbe, type ProbeSource } from "./probe";
 
 const lock = globalThis as unknown as { __radarLock?: boolean };
@@ -183,7 +183,7 @@ function persist(collector: CollectorResult, runId: number) {
         evidence.kind ?? null,
         now,
       );
-      if (evidence.bornKind && evidence.bornAt) {
+      if (evidence.bornKind && evidence.bornAt && evidence.url && verifiedCreation(row.display, evidence.bornKind, evidence.url)) {
         run(
           `insert into term_age_evidence (term_id, kind, observed_at, note)
            values (?, ?, ?, ?)

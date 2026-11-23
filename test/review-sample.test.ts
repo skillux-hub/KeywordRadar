@@ -53,9 +53,9 @@ const expectLane: Record<number, "candidate" | "raw"> = {
   3290: "candidate",
   1367: "raw",
   878: "raw",
-  470: "candidate",
-  37: "candidate",
-  38: "candidate",
+  470: "raw",
+  37: "raw",
+  38: "raw",
   84: "raw",
   3293: "candidate",
 };

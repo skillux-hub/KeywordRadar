@@ -20,14 +20,15 @@ test("reheating and a fresh local sighting do not make an old product novel", ()
 });
 
 test("a young repo or domain is only auxiliary and does not admit the name", () => {
-  assert.equal(judgeNovelty("HyperFrames", [{ kind: "repo_created", at: recent }], now).status, "unverified");
-  assert.equal(judgeNovelty("PigeonRelay", [{ kind: "product_launch", at: recent }], now).status, "unverified");
-  assert.match(judgeNovelty("HyperFrames", [{ kind: "domain_registered", at: recent }], now).reason, /不能单独放行/);
+  assert.equal(judgeNovelty("HyperFrames", [{ kind: "repo_created", at: recent, url: "https://github.com/acme/hyperframes" }], now).status, "unverified");
+  assert.equal(judgeNovelty("PigeonRelay", [{ kind: "product_launch", at: recent, url: "https://pypi.org/project/pigeonrelay/" }], now).status, "unverified");
+  assert.match(judgeNovelty("HyperFrames", [{ kind: "repo_created", at: recent, url: "https://github.com/acme/hyperframes" }], now).reason, /不能单独放行/);
+  assert.match(judgeNovelty("HyperFrames", [{ kind: "repo_created", at: recent }], now).reason, /没有独立于本次采集时间/);
 });
 
 test("an old repo or domain keeps the name out of recommendations", () => {
-  const repo = judgeNovelty("HyperFrames", [{ kind: "repo_created", at: old }], now);
-  const domain = judgeNovelty("PigeonRelay", [{ kind: "domain_registered", at: old }], now);
+  const repo = judgeNovelty("HyperFrames", [{ kind: "repo_created", at: old, url: "https://github.com/acme/hyperframes" }], now);
+  const domain = judgeNovelty("PigeonRelay", [{ kind: "domain_registered", at: old, url: "https://pigeonrelay.com" }], now);
   assert.equal(repo.status, "unverified");
   assert.equal(domain.status, "unverified");
   assert.match(repo.reason, /早于/);

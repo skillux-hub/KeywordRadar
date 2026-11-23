@@ -85,7 +85,7 @@ test("two independent sources inside 48 hours do not confirm without birth evide
       { source: "x", industry: "ai", at: within(4), url: "https://x.com/ann/status/9", author: "ann", title: "trying a new editor" },
       { source: "reddit", industry: "ai", at: within(8), url: "https://www.reddit.com/r/LocalLLaMA/comments/xyz", author: "bob", title: "anyone used this model tool" },
     ],
-    ageEvidence: [{ kind: "repo_created", at: within(20) }],
+    ageEvidence: [{ kind: "repo_created", at: within(20), url: "https://github.com/acme/hyperframes" }],
     now,
     windowHours: 48,
   });

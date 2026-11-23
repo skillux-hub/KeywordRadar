@@ -1,7 +1,7 @@
 import { SOURCE_LABEL } from "./catalog";
 import { all, get, num, run } from "./db";
 import { detectIntent, industriesFromEvidence, isNoiseTerm, normalize, painNote } from "./extract";
-import { githubRepoName, judgeBirth, knownProjectByUrl, reviewLane, type Sighting } from "./novelty";
+import { judgeBirth, knownProjectByUrl, reviewLane, sameSubject, subjectOf, verifiedCreation, type Sighting } from "./novelty";
 import { type AgeEvidence } from "./novelty";
 import { redditSpreadBoost } from "./sources/metrics";
 import { clamp } from "./utils";
@@ -238,38 +238,76 @@ export function birthVerdict(termId: number, display: string, _industries: strin
   const anchored = knownProjectByUrl(display, evidenceRows.map((row) => row.url || "").filter(Boolean));
   const verdict = anchored
     ? { status: "established" as const, reason: `这是已知项目「${anchored.label}」。${anchored.note} 证据地址 ${anchored.url}。新帖或新镜像仓库不能当成诞生。`, industry: "", independent: 0, groups: [] as ReturnType<typeof judgeBirth>["groups"], windowHours: 48, windowStart: null, windowEnd: null }
-    : judgeBirth({ term: display, industries: industriesFromEvidence(evidenceRows), sightings, ageEvidence: ageEvidenceFor(termId), now });
-  const ages = ageEvidenceFor(termId);
-  const lane = verdict.status === "unverified" ? reviewLane(display, [
+    : judgeBirth({ term: display, industries: industriesFromEvidence(evidenceRows), sightings, ageEvidence: ageEvidenceFor(termId, display), now });
+  const ages = ageEvidenceFor(termId, display);
+  const snapshots = evidenceSnapshots(termId);
+  const lane = verdict.status === "unverified" || verdict.status === "novel" ? reviewLane(display, [
     ...evidenceRows.map((row) => ({ source: row.source, kind: row.kind, title: row.title, url: row.url, quote: row.quote, publishedAt: row.published_at, collectedAt: row.collected_at })),
     ...ages.map((row) => ({ url: row.url, eventKind: row.kind, eventAt: row.at, title: "", quote: "" })),
+    ...snapshots.map((row) => ({ url: `https://github.com/${row.full_name}`, eventKind: "repo_created" as const, eventAt: row.created_at, title: "", quote: "" })),
   ]) : { lane: "", reason: "" };
+  if (verdict.status === "novel" && lane.lane !== "candidate") {
+    return {
+      ...verdict,
+      status: "unverified" as const,
+      reason: `${lane.reason} 推荐门和待核门使用同一套主体校验，这次没有与「${display}」一致的创建记录。`,
+      lane: "raw" as const,
+    };
+  }
   return {
     ...verdict,
     reason: verdict.status === "unverified" && lane.lane === "raw" && lane.reason ? `${verdict.reason} ${lane.reason}` : verdict.reason,
-    lane: lane.lane,
+    lane: verdict.status === "novel" ? "" : lane.lane,
   };
 }
 
-export function ageEvidenceFor(termId: number): AgeEvidence[] {
+export function ageEvidenceFor(termId: number, display?: string): AgeEvidence[] {
+  const term = display || get<{ display: string }>("select display from terms where id = ?", termId)?.display || "";
   const rows = all<{ kind: AgeEvidence["kind"]; observed_at: string | null; note: string | null }>("select kind, observed_at, note from term_age_evidence where term_id = ?", termId);
-  const domain = get<{ domain_registered_at: string | null }>("select domain_registered_at from term_analysis where term_id = ?", termId);
-  const evidence: AgeEvidence[] = rows.map((row) => ({ kind: row.kind, at: row.observed_at, url: row.note }));
-  if (domain?.domain_registered_at) evidence.push({ kind: "domain_registered", at: domain.domain_registered_at });
+  const evidence: AgeEvidence[] = [];
+  for (const row of rows) {
+    const domain = row.kind === "domain_registered" && row.note && sameSubject(term, row.note).ok;
+    if (!domain && !verifiedCreation(term, row.kind, row.note)) continue;
+    evidence.push({ kind: row.kind, at: row.observed_at, url: row.note });
+  }
+  const analysis = get<{ domain: string | null; domain_registered_at: string | null }>("select domain, domain_registered_at from term_analysis where term_id = ?", termId);
+  if (analysis?.domain && analysis.domain_registered_at && sameSubject(term, `https://${analysis.domain}`).ok) {
+    evidence.push({ kind: "domain_registered", at: analysis.domain_registered_at, url: `https://${analysis.domain}` });
+  }
+  const seen = new Set(evidence.filter((item) => item.kind === "repo_created").map((item) => item.url || ""));
+  for (const snap of evidenceSnapshots(termId)) {
+    const url = `https://github.com/${snap.full_name}`;
+    if (seen.has(url) || !verifiedCreation(term, "repo_created", url)) continue;
+    seen.add(url);
+    evidence.push({ kind: "repo_created", at: snap.created_at, url });
+  }
+  return evidence;
+}
+
+function evidenceSnapshots(termId: number) {
   const urls = all<{ url: string }>("select url from term_evidence where term_id = ? and url is not null", termId);
-  const seen = new Set(evidence.filter((item) => item.kind === "repo_created" && item.url).map((item) => githubRepoName(item.url || "")));
+  const found: { full_name: string; created_at: string }[] = [];
+  const seen = new Set<string>();
   for (const row of urls) {
-    const name = githubRepoName(row.url);
-    if (!name || seen.has(name)) continue;
+    let name = "";
+    try {
+      const url = new URL(row.url);
+      const parts = url.pathname.split("/").filter(Boolean);
+      if (url.hostname.replace(/^www\./, "") !== "github.com" || parts.length < 2) continue;
+      name = `${parts[0]}/${parts[1].replace(/\.git$/i, "")}`.toLowerCase();
+    } catch {
+      continue;
+    }
+    if (seen.has(name)) continue;
     const snap = get<{ full_name: string; created_at: string }>(
       "select full_name, created_at from repo_snapshots where lower(full_name) = ? and created_at is not null order by created_at asc limit 1",
       name,
     );
     if (!snap?.created_at) continue;
     seen.add(name);
-    evidence.push({ kind: "repo_created", at: snap.created_at, url: `https://github.com/${snap.full_name}` });
+    found.push(snap);
   }
-  return evidence;
+  return found;
 }
 
 let noveltyReady = false;
@@ -284,7 +322,31 @@ export function ensureNovelty() {
   }
 }
 
+export function revalidateAgeBindings() {
+  const rows = all<{ term_id: number; kind: string; note: string | null; binding: string | null; display: string }>(
+    `select a.term_id as term_id, a.kind as kind, a.note as note, a.binding as binding, t.display as display
+     from term_age_evidence a join terms t on t.id = a.term_id`,
+  );
+  for (const row of rows) {
+    const next = ageBinding(row.display, row.kind, row.note);
+    if ((row.binding || "") === next) continue;
+    run("update term_age_evidence set binding = ? where term_id = ? and kind = ?", next, row.term_id, row.kind);
+  }
+}
+
+function ageBinding(term: string, kind: string, note: string | null) {
+  if (verifiedCreation(term, kind, note)) return "verified";
+  if (kind === "product_launch" && note && sameSubject(term, note).ok && subjectOf(note)?.kind === "domain") return "claimed";
+  if (kind === "domain_registered" && note && sameSubject(term, note).ok) return "historical";
+  return "rejected";
+}
+
 export function reclassifyNovelty(now = Date.now()) {
+  try {
+    revalidateAgeBindings();
+  } catch {
+    /* 旧库还没有 binding 列时，读路径仍会按主体重新判断 */
+  }
   const terms = all<{ id: number; display: string; stage: string | null; search_status: string | null; search_method: string | null }>(
     "select id, display, stage, search_status, search_method from terms",
   );

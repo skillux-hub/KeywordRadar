@@ -1,6 +1,7 @@
 import { all, get, run } from "./db";
 import { fetchJson } from "./http";
 import { historyTarget, readGithubCreated, readPypiCreated } from "./history";
+import { sameSubject } from "./novelty";
 import { readCache, writeCache } from "./sources/cache";
 import { birthVerdict } from "./score";
 
@@ -31,13 +32,19 @@ async function enrichTerm(termId: number) {
   if (!term) return { id: termId, status: "missing", lane: "", evidence: [], reason: "没有这个词条" };
   const urls = all<{ url: string }>("select url from term_evidence where term_id = ? and url is not null", termId);
   const targets = [...new Map(urls.map((row) => historyTarget(row.url)).filter((item): item is NonNullable<typeof item> => Boolean(item)).map((item) => [item.api, item])).values()];
+  const owned = targets.filter((target) => sameSubject(term.display, target.page).ok);
   if (!targets.length) {
     const verdict = applyVerdict(term.id, term.display);
     return { id: term.id, name: term.display, status: "missing", lane: verdict.lane, evidence: [], reason: "已存证据里没有可核对的 GitHub 仓库或 PyPI 项目地址" };
   }
+  if (!owned.length) {
+    const verdict = applyVerdict(term.id, term.display);
+    const why = sameSubject(term.display, targets[0].page);
+    return { id: term.id, name: term.display, status: "rejected", lane: verdict.lane, evidence: targets.map((target) => ({ kind: target.kind, at: null, url: target.page, source: "subject-mismatch" })), reason: why.why };
+  }
   const evidence: { kind: string; at: string | null; url: string; source: string }[] = [];
   let status = "cached";
-  for (const target of targets.slice(0, 2)) {
+  for (const target of owned.slice(0, 2)) {
     const known = knownCreated(target);
     if (known) {
       evidence.push({ kind: target.kind === "github" ? "repo_created" : "product_launch", at: known, url: target.page, source: "stored" });
