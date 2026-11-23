@@ -29,7 +29,12 @@ export type AgeEvidence = {
 export type NoveltyStatus = "novel" | "established" | "unverified";
 
 export function normalizeNoveltyName(raw: string) {
-  return raw.toLowerCase().replace(/['’]/g, "").replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ");
+  return raw
+    .toLowerCase()
+    .replace(/['’]/g, "")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim()
+    .replace(/\s+/g, " ");
 }
 
 function editionToken(token: string) {

@@ -1,5 +1,5 @@
 import { guard } from "@/lib/auth";
-import { latestDigest, saveDigest } from "@/lib/digest";
+import { latestDigest, presentStoredDigest, saveDigest } from "@/lib/digest";
 import { trendReviewSummary } from "@/lib/enrich";
 import { DETAIL_SIZES, parsePage, parseSize } from "@/lib/pagination";
 import { readWeights } from "@/lib/score";
@@ -23,13 +23,14 @@ export function GET(request: Request) {
     leadSize,
     (leadPage - 1) * leadSize,
   );
-  const reviewTotal = num(get<{ c: number }>("select count(*) as c from trends_reviews")?.c);
+  const reviewTotal = num(get<{ c: number }>("select count(*) as c from trends_reviews r join terms t on t.id = r.term_id where t.novelty = 'novel'")?.c);
   const reviewSize = parseSize(url.searchParams.get("reviewSize"), 10, DETAIL_SIZES);
   const reviewPages = Math.max(1, Math.ceil(reviewTotal / reviewSize) || 1);
   const reviewPage = Math.min(parsePage(url.searchParams.get("reviewPage")), reviewPages);
   const reviews = all(
     `select r.source, r.hit, r.lead_days, r.baseline, r.peak, r.note, r.reviewed_at, t.id as term_id, t.display
      from trends_reviews r join terms t on t.id = r.term_id
+     where t.novelty = 'novel'
      order by r.reviewed_at desc limit ? offset ?`,
     reviewSize,
     (reviewPage - 1) * reviewSize,
@@ -44,15 +45,7 @@ export function GET(request: Request) {
     (historyPage - 1) * historySize,
   );
   return Response.json({
-    digest: row
-      ? {
-          id: row.id,
-          createdAt: row.created_at,
-          trigger: row.trigger,
-          payload: JSON.parse(row.payload_json),
-          delivery: row.delivery_json ? JSON.parse(row.delivery_json) : null,
-        }
-      : null,
+    digest: row ? presentStoredDigest(row) : null,
     history: { items: history, total: historyTotal, page: historyPage, size: historySize },
     backtest: {
       samples,

@@ -29,6 +29,13 @@ test("an old repo or domain keeps the name out of recommendations", () => {
   assert.equal(judgeNovelty("PigeonRelay", [{ kind: "domain_registered", at: old }], now).status, "established");
 });
 
+test("a chinese sentence that mentions typescript is not the typescript entity", () => {
+  const phrase = "從交易紀錄計算已實現與未實現損益 typescript 實作";
+  assert.equal(isEstablishedName(phrase), false);
+  assert.equal(judgeNovelty(phrase, [], now).status, "unverified");
+  assert.equal(isEstablishedName("TypeScript"), true);
+  assert.equal(isEstablishedName("typescript 5.5"), true);
+});
 test("missing age evidence stays unverified without paid keys", () => {
   const previousOpenAi = process.env.OPENAI_API_KEY;
   const previousSeo = process.env.DATAFORSEO_LOGIN;

@@ -3,6 +3,7 @@ import { SOURCE_LABEL, stageMeta } from "./catalog";
 import { all, get, run } from "./db";
 import { fetchText } from "./http";
 import { trendReviewSummary } from "./enrich";
+import { filterDigestPayload } from "./digest-filter";
 import { ensureNovelty, readWeights } from "./score";
 import { zonedNow } from "./utils";
 
@@ -67,7 +68,7 @@ export function latestDigest() {
 export async function saveDigest(trigger: "collect" | "schedule" | "manual", deliver: boolean) {
   const items = buildDigestItems();
   const backtest = all<{ lead_hours: number }>(
-    "select lead_hours from terms where lead_hours is not null and ifnull(google_at_discovery,0)=0 and lead_hours > 0",
+    "select lead_hours from terms where novelty = 'novel' and lead_hours is not null and ifnull(google_at_discovery,0)=0 and lead_hours > 0",
   );
   const avg = backtest.length ? backtest.reduce((sum, row) => sum + Number(row.lead_hours), 0) / backtest.length : null;
   const zone = zonedNow();
@@ -89,6 +90,40 @@ export async function saveDigest(trigger: "collect" | "schedule" | "manual", del
     JSON.stringify(delivery),
   );
   return { id: Number(inserted.lastInsertRowid), payload, delivery };
+}
+
+export function presentStoredDigest(row: { id: number; created_at: string; trigger: string; payload_json: string; delivery_json: string | null }) {
+  ensureNovelty();
+  const payload = JSON.parse(row.payload_json) as {
+    items?: { id?: number; term?: string }[];
+    demands?: { term?: string; keyword?: string; decision?: string }[];
+  };
+  const items = Array.isArray(payload.items) ? payload.items : [];
+  const filtered = filterDigestPayload(items, payload.demands, (item) => currentNovelty(item.id, item.term) === "novel");
+  return {
+    id: row.id,
+    createdAt: row.created_at,
+    trigger: row.trigger,
+    payload: {
+      ...payload,
+      items: filtered.items,
+      demands: filtered.demands,
+      snapshotFiltered: filtered.snapshotFiltered,
+      hiddenCount: filtered.hiddenCount,
+      filterNote: filtered.snapshotFiltered ? "这是历史快照，已按当前新颖性去掉不再是新词的条目。原始存档没有改。" : "",
+    },
+    delivery: row.delivery_json ? JSON.parse(row.delivery_json) : null,
+  };
+}
+
+function currentNovelty(id?: number, term?: string) {
+  if (id) {
+    const byId = get<{ novelty: string | null }>("select novelty from terms where id = ?", id);
+    if (byId) return byId.novelty || "unverified";
+  }
+  if (!term) return "unverified";
+  const byName = get<{ novelty: string | null }>("select novelty from terms where display = ? or normalized = ? limit 1", term, term.toLowerCase());
+  return byName?.novelty || "unverified";
 }
 
 function digestText(payload: { title: string; items: DigestItem[]; backtest: { samples: number; avgLeadHours: number | null } }) {

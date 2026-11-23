@@ -12,6 +12,9 @@ type Payload = {
   items: { id: number; term: string; stageLabel: string; opportunity: number; summary: string; sources: string[] }[];
   backtest: { samples: number; avgLeadHours: number | null };
   demands?: { term: string; keyword: string; decision: string }[];
+  snapshotFiltered?: boolean;
+  hiddenCount?: number;
+  filterNote?: string;
 };
 
 export default function DigestPage() {
@@ -77,6 +80,7 @@ export default function DigestPage() {
 
       <section className="mt-4 space-y-3">
         {!digest && <div className="panel px-4 py-8 text-sm text-muted">首轮采集结束后会留下一份快照。采集快照不会发邮件。</div>}
+        {digest?.payload.filterNote && <p className="text-sm text-muted">{digest.payload.filterNote}{digest.payload.hiddenCount ? ` 已隐藏 ${digest.payload.hiddenCount} 条。` : ""}</p>}
         {digest?.payload.items.map((item, index) => (
           <article key={item.id} className="panel p-4">
             <div className="flex items-baseline justify-between gap-3">
