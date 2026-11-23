@@ -30,7 +30,7 @@ export default function Page() {
           rawTotal: raw.total,
           excludedTotal: excluded.total,
           status: jobStatus(),
-          seeds,
+          seeds: seeds.map((seed) => ({ id: Number(seed.id), topic: String(seed.topic), region: String(seed.region), industry: seed.industry ? String(seed.industry) : null })),
         }}
       />
     </Suspense>
