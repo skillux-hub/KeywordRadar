@@ -66,6 +66,7 @@ const INDUSTRY_RULES: [string, RegExp][] = [
   ["gaming", /\b(gaming|game dev|steam deck|playstation|xbox|nintendo|esports|indie game)\b/i],
   ["finance", /\b(stocks|investing|portfolio|fintech|trading|etf|mortgage|personal finance|brokerage)\b/i],
   ["saas", /\b(saas|b2b|startup|mrr|arr|onboarding|workflow automation|product led)\b/i],
+  ["devtools", /\b(developer tool|devtools|cli tool|sdk|linter|github action|vscode extension|package manager|ide plugin)\b/i],
 ];
 
 export function normalize(input: string): string {

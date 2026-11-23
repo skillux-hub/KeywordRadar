@@ -1,7 +1,8 @@
 import { SOURCE_LABEL } from "./catalog";
 import { all, get, num, run } from "./db";
 import { detectIntent, isNoiseTerm, normalize, painNote } from "./extract";
-import { judgeNovelty, type AgeEvidence } from "./novelty";
+import { judgeBirth, type Sighting } from "./novelty";
+import { type AgeEvidence } from "./novelty";
 import { redditSpreadBoost } from "./sources/metrics";
 import { clamp } from "./utils";
 
@@ -156,10 +157,10 @@ export function scoreAll() {
     const summary = [`出现在${names}。`, intentLine[intent] ?? intentLine.unknown, pain ? `痛点：${pain}。` : "", quote ? `原话：${quote}` : ""]
       .filter(Boolean)
       .join("");
-    const verdict = judgeNovelty(term.display, ageEvidenceFor(term.id), now);
+    const verdict = birthVerdict(term.id, term.display, obs.map((row) => row.industry).filter((item): item is string => Boolean(item)), now);
     const lastSeen = obs.map((row) => row.collected_at).sort().at(-1) ?? new Date(now).toISOString();
     run(
-      `update terms set stage=?, discovery_score=?, opportunity_score=?, momentum_score=?, newness_score=?, intent=?, summary=?, influencer_count=?, spark_json=?, last_seen_at=?, novelty=?, novelty_reason=? where id=?`,
+      `update terms set stage=?, discovery_score=?, opportunity_score=?, momentum_score=?, newness_score=?, intent=?, summary=?, influencer_count=?, spark_json=?, last_seen_at=?, novelty=?, novelty_reason=?, independent_sources=?, focus_industry=?, source_groups=? where id=?`,
       stage,
       Number(discovery.toFixed(1)),
       Number(opportunity.toFixed(1)),
@@ -172,6 +173,9 @@ export function scoreAll() {
       lastSeen,
       verdict.status,
       verdict.reason,
+      verdict.independent,
+      verdict.industry,
+      JSON.stringify(verdict.groups),
       term.id,
     );
     for (const source of sources) run("insert or ignore into term_sources (term_id, source) values (?, ?)", term.id, source);
@@ -215,6 +219,26 @@ function lifecycleDurability(obs: Obs[], now: number) {
   return 50;
 }
 
+export function birthVerdict(termId: number, display: string, industries: string[] = [], now = Date.now()) {
+  const seen = new Set(industries.filter(Boolean));
+  for (const row of all<{ industry: string | null }>("select distinct industry from term_observations where term_id = ?", termId)) {
+    if (row.industry) seen.add(row.industry);
+  }
+  for (const row of all<{ industry: string }>("select industry from term_industries where term_id = ?", termId)) seen.add(row.industry);
+  const sightings = all<{ source: string; url: string | null; author: string | null; title: string | null; published_at: string | null; collected_at: string | null; industry: string | null }>(
+    "select source, url, author, title, published_at, collected_at, industry from term_evidence where term_id = ?",
+    termId,
+  ).map((row): Sighting => ({
+    source: row.source,
+    url: row.url,
+    author: row.author,
+    title: row.title,
+    industry: row.industry,
+    at: row.published_at || row.collected_at,
+  }));
+  return judgeBirth({ term: display, industries: [...seen], sightings, ageEvidence: ageEvidenceFor(termId), now });
+}
+
 export function ageEvidenceFor(termId: number): AgeEvidence[] {
   const rows = all<{ kind: AgeEvidence["kind"]; observed_at: string | null }>("select kind, observed_at from term_age_evidence where term_id = ?", termId);
   const domain = get<{ domain_registered_at: string | null }>("select domain_registered_at from term_analysis where term_id = ?", termId);
@@ -238,8 +262,16 @@ export function ensureNovelty() {
 export function reclassifyNovelty(now = Date.now()) {
   const terms = all<{ id: number; display: string }>("select id, display from terms");
   for (const term of terms) {
-    const verdict = judgeNovelty(term.display, ageEvidenceFor(term.id), now);
-    run("update terms set novelty = ?, novelty_reason = ? where id = ?", verdict.status, verdict.reason, term.id);
+    const verdict = birthVerdict(term.id, term.display, [], now);
+    run(
+      "update terms set novelty = ?, novelty_reason = ?, independent_sources = ?, focus_industry = ?, source_groups = ? where id = ?",
+      verdict.status,
+      verdict.reason,
+      verdict.independent,
+      verdict.industry,
+      JSON.stringify(verdict.groups),
+      term.id,
+    );
   }
 }
 

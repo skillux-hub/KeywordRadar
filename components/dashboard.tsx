@@ -36,6 +36,8 @@ type Keyword = {
   industryLabels: string[];
   spark: number[];
   nameScore: number | null;
+  independentSources?: number;
+  focusIndustry?: string;
   serpShape: string;
 };
 
@@ -284,7 +286,7 @@ export function Dashboard() {
           <Link key={item.id} href={`/terms/${item.id}`} className="panel block p-3.5 transition hover:border-primary/40">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <div className="text-[11px] text-faint">#{index + 1} · {item.intentLabel} · {ago(item.firstSeen)}{item.nameScore != null ? ` · 专名 ${Math.round(item.nameScore * 100)}` : ""}{item.serpShape ? ` · ${item.serpShape}` : ""}</div>
+                <div className="text-[11px] text-faint">#{index + 1} · {item.intentLabel} · {ago(item.firstSeen)}{item.focusIndustry ? ` · ${item.focusIndustry}` : ""}{item.independentSources ? ` · 独立源 ${item.independentSources}` : ""}{item.nameScore != null ? ` · 专名 ${Math.round(item.nameScore * 100)}` : ""}{item.serpShape ? ` · ${item.serpShape}` : ""}</div>
                 <div className="mt-0.5 break-words text-[15px] font-medium">{item.term}</div>
               </div>
               <Score value={item.opportunity} />
@@ -321,7 +323,7 @@ export function Dashboard() {
                     <td className="border-b border-border px-4 py-3 text-faint">{index + 1}</td>
                     <td className="border-b border-border px-3 py-3">
                       <Link href={`/terms/${item.id}`} className="font-medium hover:text-primary">{item.term}</Link>
-                      <div className="mt-0.5 text-xs text-faint">{item.intentLabel} · {item.industryLabels.join(" / ") || "未分类"}{item.nameScore != null ? ` · 专名 ${Math.round(item.nameScore * 100)}` : ""}{item.serpShape ? ` · ${item.serpShape}` : ""}</div>
+                      <div className="mt-0.5 text-xs text-faint">{item.intentLabel} · {item.industryLabels.join(" / ") || "未分类"}{item.focusIndustry ? ` · 基线 ${item.focusIndustry}` : ""}{item.independentSources ? ` · 独立源 ${item.independentSources}` : ""}{item.nameScore != null ? ` · 专名 ${Math.round(item.nameScore * 100)}` : ""}{item.serpShape ? ` · ${item.serpShape}` : ""}</div>
                     </td>
                     <td className="border-b border-border px-3 py-3"><span className={`stage stage-${item.stage}`}>{item.stageLabel}</span></td>
                     <td className="border-b border-border px-3 py-3"><Score value={item.opportunity} /></td>

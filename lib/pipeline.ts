@@ -13,6 +13,7 @@ import { collectSitemaps } from "./collectors/sitemap";
 import { result, withTimeout, type CollectContext, type CollectorResult, type Hit, type Suggestion } from "./collectors/types";
 import { collectX } from "./collectors/x";
 import { discoveryDue, runDiscovery } from "./sources/discover";
+import { judgeSearch } from "./novelty";
 
 const lock = globalThis as unknown as { __radarLock?: boolean };
 
@@ -232,7 +233,7 @@ function persist(collector: CollectorResult, runId: number) {
   return kept;
 }
 
-function applyGoogle(updates: { id: number; suggest: boolean; trends: boolean }[]) {
+function applyGoogle(updates: { id: number; suggest: boolean | null; trends: boolean | null }[]) {
   const now = new Date().toISOString();
   for (const update of updates) {
     const term = get<{
@@ -243,9 +244,10 @@ function applyGoogle(updates: { id: number; suggest: boolean; trends: boolean }[
       google_first_seen_at: string | null;
       checked_google_at: string | null;
       lead_hours: number | null;
-    }>("select first_seen_at, on_suggest, on_trends, google_at_discovery, google_first_seen_at, checked_google_at, lead_hours from terms where id = ?", update.id);
+      search_status: string | null;
+    }>("select first_seen_at, on_suggest, on_trends, google_at_discovery, google_first_seen_at, checked_google_at, lead_hours, search_status from terms where id = ?", update.id);
     if (!term) continue;
-    const hit = update.suggest || update.trends;
+    const hit = update.suggest === true || update.trends === true;
     let atDiscovery = term.google_at_discovery ?? 0;
     let first = term.google_first_seen_at;
     let lead = term.lead_hours;
@@ -261,14 +263,25 @@ function applyGoogle(updates: { id: number; suggest: boolean; trends: boolean }[
         lead = (Date.now() - new Date(term.first_seen_at).getTime()) / 3600000;
       }
     }
+    const search = judgeSearch({
+      suggest: update.suggest,
+      trends: update.trends,
+      dataForSeoConfigured: Boolean(process.env.DATAFORSEO_LOGIN && process.env.DATAFORSEO_PASSWORD),
+      dataForSeo: null,
+    });
+    const status = search.status === "unknown" && (term.search_status === "indexed" || term.search_status === "absent") ? term.search_status : search.status;
     run(
-      `update terms set on_suggest = ?, on_trends = ?, google_at_discovery = ?, google_first_seen_at = ?, lead_hours = ?, checked_google_at = ? where id = ?`,
-      update.suggest ? 1 : term.on_suggest,
-      update.trends ? 1 : term.on_trends,
+      `update terms set on_suggest = ?, on_trends = ?, google_at_discovery = ?, google_first_seen_at = ?, lead_hours = ?, checked_google_at = ?, search_status = ?, search_method = ?, search_note = ?, search_checked_at = ? where id = ?`,
+      update.suggest === true ? 1 : update.suggest === false ? 0 : term.on_suggest,
+      update.trends === true ? 1 : update.trends === false ? 0 : term.on_trends,
       atDiscovery,
       first,
       lead,
-      now,
+      search.status === "unknown" ? term.checked_google_at : now,
+      status,
+      search.method,
+      search.note,
+      search.status === "unknown" ? term.checked_google_at : now,
       update.id,
     );
   }

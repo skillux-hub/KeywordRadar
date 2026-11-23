@@ -1,5 +1,6 @@
 export const INDUSTRIES = [
   { slug: "ai", nameZh: "人工智能", nameEn: "AI" },
+  { slug: "devtools", nameZh: "开发者工具", nameEn: "Developer tools" },
   { slug: "saas", nameZh: "SaaS / 创业", nameEn: "SaaS" },
   { slug: "crypto", nameZh: "加密货币", nameEn: "Crypto" },
   { slug: "ecommerce", nameZh: "电商 / DTC", nameEn: "Ecommerce" },

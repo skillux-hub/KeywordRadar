@@ -19,9 +19,10 @@ test("reheating and a fresh local sighting do not make an old product novel", ()
   assert.match(verdict.reason, /长期产品/);
 });
 
-test("a young repo or launch can verify a new entity", () => {
-  assert.equal(judgeNovelty("HyperFrames", [{ kind: "repo_created", at: recent }], now).status, "novel");
-  assert.equal(judgeNovelty("PigeonRelay", [{ kind: "product_launch", at: recent }], now).status, "novel");
+test("a young repo or domain is only auxiliary and does not admit the name", () => {
+  assert.equal(judgeNovelty("HyperFrames", [{ kind: "repo_created", at: recent }], now).status, "unverified");
+  assert.equal(judgeNovelty("PigeonRelay", [{ kind: "product_launch", at: recent }], now).status, "unverified");
+  assert.match(judgeNovelty("HyperFrames", [{ kind: "domain_registered", at: recent }], now).reason, /不能单独放行/);
 });
 
 test("an old repo or domain keeps the name out of recommendations", () => {

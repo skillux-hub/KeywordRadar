@@ -25,6 +25,12 @@ type Detail = {
   summary: string;
   novelty?: string;
   noveltyReason?: string;
+  independentSources?: number;
+  focusIndustry?: string;
+  searchStatus?: string;
+  searchMethod?: string;
+  searchNote?: string;
+  searchCheckedAt?: string;
   firstSeen: string;
   sources: string[];
   sourceLabels: string[];
@@ -149,7 +155,7 @@ export default function TermPage({ params }: { params: Promise<{ id: string }> }
                 <h1 className="mt-3 break-words text-2xl font-semibold tracking-tight sm:text-4xl">{data.term}</h1>
                 {data.nameScore != null && <p className="mt-1 text-xs text-faint">专名判断 {Math.round(data.nameScore * 100)} / 100</p>}
                 {data.novelty && data.novelty !== "novel" && <p className="mt-2 text-sm text-muted">未列入新词推荐。{data.noveltyReason}</p>}
-                {data.novelty === "novel" && data.noveltyReason && <p className="mt-2 text-sm text-muted">新词证据：{data.noveltyReason}</p>}
+                {data.novelty === "novel" && <p className="mt-2 text-sm text-muted">已确认。{data.focusIndustry ? `行业 ${data.focusIndustry}。` : ""}独立来源 {data.independentSources ?? 0} 组。{data.noveltyReason}</p>}
                 <p className="mt-3 max-w-3xl break-words text-sm leading-6 text-muted">{data.summary}</p>
                 <div className="mt-3 flex flex-wrap gap-1.5">
                   {data.sources.map((source, index) => (
@@ -172,7 +178,7 @@ export default function TermPage({ params }: { params: Promise<{ id: string }> }
           </section>
 
           <section className="grid gap-3 md:grid-cols-3">
-            <Info title="Google" body={data.onSuggest ? "自动补全已经会写出这个词。" : "自动补全还没跟上。"} extra={data.onTrends ? "每日趋势里也出现了。" : data.googleAtDiscovery ? "第一次看见时 Google 就已经知道。" : data.leadHours ? `领先约 ${data.leadHours.toFixed(1)} 小时。` : "还在窗口里。"} />
+            <Info title="搜索校验" body={searchLabel(data.searchStatus)} extra={`${data.searchMethod ? `方法 ${data.searchMethod}。` : ""}${data.searchCheckedAt ? `检查于 ${data.searchCheckedAt}。` : ""}${data.searchNote || "还没有成功的搜索校验，不能写成未收录。"}`} />
             <Info title="竞争" body={`${data.analysis?.competitionLabel || "未检测"}${data.analysis?.serpShape ? ` · ${data.analysis.serpShape}` : ""}`} extra={`${data.analysis?.competitionNote || "这一轮还没拉 SERP。"}${data.analysis?.youngLoosened ? " 年轻词已放宽一档。" : ""}${data.analysis?.kgr != null ? ` KGR ${data.analysis.kgr}。` : ""}${data.analysis?.adsPresent == null ? "" : data.analysis.adsPresent ? " 有广告。" : " 无广告。"}`} />
             <Info title="域名窗口" body={domainLabel(data.analysis?.domainStatus || "unknown")} extra={`${data.analysis?.domain || "未检查"}。${data.analysis?.landNote || ""} ${data.analysis?.lifecycle || "观察中"}。`} />
           </section>
@@ -343,6 +349,12 @@ function Outline({ data }: { data: Detail["analysis"] }) {
       <Pagination page={data.clusterPage || 1} size={10} total={Math.max(data.sectionTotal || 0, data.clusterTotal || 0)} pageParam="clusterPage" sizeParam="clusterSize" sizes={DETAIL_SIZES} />
     </div>
   );
+}
+
+function searchLabel(status?: string) {
+  if (status === "indexed") return "已有收录";
+  if (status === "absent") return "未检出";
+  return "未知";
 }
 
 function domainLabel(status: string) {
